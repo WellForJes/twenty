@@ -9,7 +9,6 @@ from binance.client import Client
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator, ADXIndicator
 from dotenv import load_dotenv
-import threading
 
 # === Telegram параметры ===
 TELEGRAM_TOKEN = "7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U"
@@ -52,7 +51,6 @@ except Exception as e:
 INTERVAL = Client.KLINE_INTERVAL_15MINUTE
 LIMIT = 100
 
-
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -62,18 +60,14 @@ def send_message(chat_id, text):
     }
     requests.post(url, data=payload)
 
-
-# ========== Остальной код (анализ и торговля) ==========
 def send_status_to_telegram():
     try:
         tz = pytz.timezone("Europe/Kyiv")
         now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-
-        # Сбор информации о позициях
         positions_info = []
         account_info = client.futures_account()
         balance_info = next((b for b in account_info.get('assets', []) if b['asset'] == 'USDT'), None)
-        balance = float(balance_info.get('balance', 0.0)) if balance_info else 0.0
+        balance = float(balance_info.get('availableBalance', 0.0)) if balance_info else 0.0
         total_pnl = 0
 
         for symbol in symbols:
@@ -112,67 +106,9 @@ def send_status_to_telegram():
     except Exception as e:
         print(f"❌ Ошибка Telegram-отчёта: {e}")
 
-
 def analyze_and_trade(symbol):
     print(f"▶️ Анализ: {symbol}")
     try:
-        brackets = client.futures_leverage_bracket(symbol=symbol)
-        max_leverage = brackets[0]["brackets"][0]["initialLeverage"]
-
-        risk_amount = DEPOSIT * RISK_PER_TRADE
-        ticker = client.futures_mark_price(symbol=symbol)
-        price = float(ticker["markPrice"])
-        required_position = risk_amount / (price * 0.01)
-        required_leverage = math.ceil((required_position * price) / DEPOSIT)
-        leverage_to_set = min(required_leverage, max_leverage)
-        client.futures_change_leverage(symbol=symbol, leverage=leverage_to_set)
-        print(f"⚙️ {symbol}: Установлено плечо {leverage_to_set}x")
-    except Exception as e:
-        print(f"⚠️ {symbol}: Не удалось установить плечо — {e}")
-        return
-
-    try:
-        open_orders = client.futures_get_open_orders(symbol=symbol)
-        tp_orders = [o for o in open_orders if o['type'] == "TAKE_PROFIT_MARKET"]
-        sl_orders = [o for o in open_orders if o['type'] == "STOP_MARKET"]
-        positions = client.futures_position_information(symbol=symbol)
-        position = next((p for p in positions if float(p['positionAmt']) != 0), None)
-
-        if position is None and (tp_orders or sl_orders):
-            for o in open_orders:
-                client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
-            print(f"🧹 {symbol}: Очищены старые ордера")
-            return
-
-        if position:
-            entry_price = float(position['entryPrice'])
-            side = 'LONG' if float(position['positionAmt']) > 0 else 'SHORT'
-            if len(tp_orders) + len(sl_orders) > 2:
-                for o in open_orders:
-                    client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
-                print(f"❌ {symbol}: Дублирование TP/SL")
-            elif len(tp_orders) == 0 or len(sl_orders) == 0:
-                for o in open_orders:
-                    client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
-                if side == 'LONG':
-                    stop_loss = round(entry_price * 0.99, 2)
-                    take_profit = round(entry_price * 1.05, 2)
-                    client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
-                                                stopPrice=take_profit, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                    client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET",
-                                                stopPrice=stop_loss, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                else:
-                    stop_loss = round(entry_price * 1.01, 2)
-                    take_profit = round(entry_price * 0.95, 2)
-                    client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
-                                                stopPrice=take_profit, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                    client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET",
-                                                stopPrice=stop_loss, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                print(f"🔁 {symbol}: TP/SL восстановлены")
-            else:
-                print(f"⏸️ {symbol}: Позиция и TP/SL уже установлены")
-            return
-
         klines = client.futures_klines(symbol=symbol, interval=INTERVAL, limit=LIMIT)
         df = pd.DataFrame(klines, columns=[
             "timestamp", "open", "high", "low", "close", "volume",
@@ -233,7 +169,26 @@ while True:
     print(f"\n⏰ Анализ монет ({now}):")
 
     for symbol in symbols:
-        analyze_and_trade(symbol)
+        try:
+            brackets = client.futures_leverage_bracket(symbol=symbol)
+            max_leverage = brackets[0]["brackets"][0]["initialLeverage"]
+
+            risk_amount = DEPOSIT * RISK_PER_TRADE
+            ticker = client.futures_mark_price(symbol=symbol)
+            price = float(ticker["markPrice"])
+            required_position = risk_amount / (price * 0.01)
+            required_leverage = math.ceil((required_position * price) / DEPOSIT)
+            leverage_to_set = min(required_leverage, max_leverage)
+            client.futures_change_leverage(symbol=symbol, leverage=leverage_to_set)
+            print(f"⚙️ {symbol}: Установлено плечо {leverage_to_set}x")
+        except Exception as e:
+            print(f"⚠️ {symbol}: Не удалось установить плечо — {e}")
+            continue
+
+        try:
+            analyze_and_trade(symbol)
+        except Exception as e:
+            print(f"❌ Ошибка {symbol}: {type(e).__name__} — {e}")
         time.sleep(1)
 
     if int(time.time()) - last_telegram_report_time >= 300:
