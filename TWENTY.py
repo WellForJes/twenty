@@ -137,36 +137,35 @@ def analyze_and_trade(symbol):
         positions = client.futures_position_information(symbol=symbol)
         position = next((p for p in positions if float(p['positionAmt']) != 0), None)
 
+        # ✅ Удаляем дублирующиеся ордера, если позиция уже есть
         if position:
-            if tp_orders and sl_orders:
-                print(f"⏸️ {symbol}: Позиция и TP/SL уже стоят")
-                return
-            else:
+            if len(open_orders) > 2:
                 for o in open_orders:
                     client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
-                entry_price = float(position['entryPrice'])
-                side = "LONG" if float(position['positionAmt']) > 0 else "SHORT"
-                if side == 'LONG':
-                    sl = round(entry_price * 0.99, 2)
-                    tp = round(entry_price * 1.05, 2)
-                    client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
-                                                stopPrice=tp, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                    client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET",
-                                                stopPrice=sl, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                else:
-                    sl = round(entry_price * 1.01, 2)
-                    tp = round(entry_price * 0.95, 2)
-                    client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
-                                                stopPrice=tp, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                    client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET",
-                                                stopPrice=sl, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-                print(f"🔁 {symbol}: TP/SL установлены повторно")
-                return
+                print(f"🧹 {symbol}: Удалены лишние ордера")
+            entry_price = float(position['entryPrice'])
+            side = "LONG" if float(position['positionAmt']) > 0 else "SHORT"
+            if side == 'LONG':
+                sl = round(entry_price * 0.99, 2)
+                tp = round(entry_price * 1.05, 2)
+                client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
+                                            stopPrice=tp, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET",
+                                            stopPrice=sl, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+            else:
+                sl = round(entry_price * 1.01, 2)
+                tp = round(entry_price * 0.95, 2)
+                client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
+                                            stopPrice=tp, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET",
+                                            stopPrice=sl, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+            print(f"🔁 {symbol}: TP/SL обновлены")
+            return
 
         if open_orders:
             for o in open_orders:
                 client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
-            print(f"🧹 {symbol}: Очищены старые ордера")
+            print(f"🧹 {symbol}: Очищены старые ордера перед входом")
 
         klines = client.futures_klines(symbol=symbol, interval=INTERVAL, limit=LIMIT)
         df = pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close", "volume",
