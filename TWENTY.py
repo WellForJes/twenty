@@ -53,8 +53,9 @@ except Exception as e:
 INTERVAL = Client.KLINE_INTERVAL_15MINUTE
 LIMIT = 100
 
-log_buffer = io.StringIO()
-sys.stdout = log_buffer
+# Отключаем перенаправление stdout
+# log_buffer = io.StringIO()
+# sys.stdout = log_buffer
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -94,16 +95,11 @@ def send_status_to_telegram():
         else:
             positions_text = "Нет открытых позиций."
 
-        logs = log_buffer.getvalue()
-        last_lines = logs.strip().splitlines()[-20:]
-        logs_text = "\n".join(last_lines)
-
         msg = (
             f"🟢 Бот работает. Последний цикл: {now} (Kyiv)\n\n"
             f"{positions_text}\n\n"
             f"💰 Баланс: {round(balance, 2)} USDT\n"
-            f"📊 Чистый PnL: {round(total_pnl, 2)} USDT\n\n"
-            f"📝 <b>Последние логи:</b>\n<pre>{logs_text}</pre>"
+            f"📊 Чистый PnL: {round(total_pnl, 2)} USDT"
         )
 
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -140,7 +136,6 @@ def analyze_and_trade(symbol):
         ema50 = latest['ema50']
         adx = latest['adx']
 
-        # Режим: боковик или тренд
         if adx < 20 and abs(ema20 - ema50) / price < 0.005:
             tp_coef = 1.02
             sl_coef = 0.995
@@ -150,7 +145,7 @@ def analyze_and_trade(symbol):
             sl_coef = 0.99
             mode = "ТРЕНД"
 
-        print(f"{symbol}: Режим — {mode}")
+        print(f"{symbol}: Режим — {mode}, Цена: {price}, RSI: {rsi:.2f}, EMA20: {ema20:.2f}, EMA50: {ema50:.2f}, ADX: {adx:.2f}")
 
         risk_amount = DEPOSIT * RISK_PER_TRADE
         position_size = risk_amount / (price * 0.01)
