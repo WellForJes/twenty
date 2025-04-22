@@ -65,6 +65,57 @@ def send_message(chat_id, text):
     }
     requests.post(url, data=payload)
 
+def send_status_to_telegram():
+    try:
+        tz = pytz.timezone("Europe/Kyiv")
+        now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+        positions_info = []
+        account_info = client.futures_account()
+        balance_info = next((b for b in account_info.get('assets', []) if b['asset'] == 'USDT'), None)
+        balance = float(balance_info.get('availableBalance', 0.0)) if balance_info else 0.0
+        total_pnl = 0
+
+        for symbol in symbols:
+            positions = client.futures_position_information(symbol=symbol)
+            position = next((p for p in positions if float(p['positionAmt']) != 0), None)
+            if position:
+                amt = float(position['positionAmt'])
+                entry = float(position['entryPrice'])
+                mark = float(position['markPrice'])
+                unrealized = float(position.get('unrealizedProfit', 0.0))
+                side = "LONG" if amt > 0 else "SHORT"
+                tp = round(entry * 1.05, 2) if amt > 0 else round(entry * 0.95, 2)
+                sl = round(entry * 0.99, 2) if amt > 0 else round(entry * 1.01, 2)
+                total_pnl += unrealized
+                positions_info.append(f"{symbol}: {side} | Вход: {entry} | Марк: {mark} | TP: {tp} | SL: {sl} | PnL: {round(unrealized, 2)}")
+
+        if positions_info:
+            positions_text = "\n".join(positions_info)
+        else:
+            positions_text = "Нет открытых позиций."
+
+        logs = log_buffer.getvalue()
+        last_lines = logs.strip().splitlines()[-20:]
+        logs_text = "\n".join(last_lines)
+
+        msg = (
+            f"🟢 Бот работает. Последний цикл: {now} (Kyiv)\n\n"
+            f"{positions_text}\n\n"
+            f"💰 Баланс: {round(balance, 2)} USDT\n"
+            f"📊 Чистый PnL: {round(total_pnl, 2)} USDT\n\n"
+            f"📝 <b>Последние логи:</b>\n<pre>{logs_text}</pre>"
+        )
+
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}
+        response = requests.post(url, data=payload)
+        if response.status_code != 200:
+            print(f"⚠️ Ошибка Telegram: {response.text}")
+        else:
+            print(f"📨 Статус и отчёт отправлены в Telegram ({now})")
+    except Exception as e:
+        print(f"❌ Ошибка Telegram-отчёта: {e}")
+
 def analyze_and_trade(symbol):
     print(f"▶️ Анализ: {symbol}")
     try:
@@ -91,8 +142,8 @@ def analyze_and_trade(symbol):
 
         # Режим: боковик или тренд
         if adx < 20 and abs(ema20 - ema50) / price < 0.005:
-            tp_coef = 1.015
-            sl_coef = 0.99
+            tp_coef = 1.02
+            sl_coef = 0.995
             mode = "БОКОВИК"
         else:
             tp_coef = 1.05
@@ -168,3 +219,18 @@ def analyze_and_trade(symbol):
 
     except Exception as e:
         print(f"❌ Ошибка {symbol}: {type(e).__name__} — {e}")
+
+while True:
+    tz = pytz.timezone("Europe/Kyiv")
+    now = datetime.now(tz).strftime("%H:%M:%S")
+    print(f"\n⏰ Анализ монет ({now}):")
+
+    for symbol in symbols:
+        analyze_and_trade(symbol)
+        time.sleep(1)
+
+    if int(time.time()) - last_telegram_report_time >= 300:
+        send_status_to_telegram()
+        last_telegram_report_time = int(time.time())
+
+    time.sleep(60)
