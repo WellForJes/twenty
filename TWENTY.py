@@ -77,7 +77,7 @@ def send_status_to_telegram():
                 amt = float(position['positionAmt'])
                 entry = float(position['entryPrice'])
                 mark = float(position['markPrice'])
-                unrealized = float(position['unrealizedProfit'])
+                unrealized = float(position.get('unrealizedProfit', 0.0))
                 side = "LONG" if amt > 0 else "SHORT"
                 tp = round(entry * 1.05, 2) if amt > 0 else round(entry * 0.95, 2)
                 sl = round(entry * 0.99, 2) if amt > 0 else round(entry * 1.01, 2)
@@ -135,6 +135,36 @@ def analyze_and_trade(symbol):
         min_qty = min_quantities.get(symbol, 0.001)
         if qty < min_qty:
             print(f"⛔ {symbol}: qty слишком мала")
+            return
+
+        open_orders = client.futures_get_open_orders(symbol=symbol)
+        tp_orders = [o for o in open_orders if o['type'] == "TAKE_PROFIT_MARKET"]
+        sl_orders = [o for o in open_orders if o['type'] == "STOP_MARKET"]
+        position = next((p for p in client.futures_position_information(symbol=symbol) if float(p['positionAmt']) != 0), None)
+
+        if position:
+            entry_price = float(position['entryPrice'])
+            side = 'LONG' if float(position['positionAmt']) > 0 else 'SHORT'
+            if len(tp_orders) == 0 or len(sl_orders) == 0:
+                for o in open_orders:
+                    client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
+                if side == 'LONG':
+                    stop_loss = round(entry_price * 0.99, 2)
+                    take_profit = round(entry_price * 1.05, 2)
+                    client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
+                                                stopPrice=take_profit, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                    client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET",
+                                                stopPrice=stop_loss, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                else:
+                    stop_loss = round(entry_price * 1.01, 2)
+                    take_profit = round(entry_price * 0.95, 2)
+                    client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
+                                                stopPrice=take_profit, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                    client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET",
+                                                stopPrice=stop_loss, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                print(f"🔁 {symbol}: TP/SL восстановлены")
+            else:
+                print(f"⏸️ {symbol}: TP/SL уже существуют")
             return
 
         if adx < 25 and price <= low * 1.01 and rsi < 40 and price < ema20 < ema50:
