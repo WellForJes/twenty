@@ -132,12 +132,36 @@ def analyze_and_trade(symbol):
             return
 
         open_orders = client.futures_get_open_orders(symbol=symbol)
+        tp_orders = [o for o in open_orders if o['type'] == "TAKE_PROFIT_MARKET"]
+        sl_orders = [o for o in open_orders if o['type'] == "STOP_MARKET"]
         positions = client.futures_position_information(symbol=symbol)
         position = next((p for p in positions if float(p['positionAmt']) != 0), None)
 
         if position:
-            print(f"⏸️ {symbol}: Позиция уже открыта")
-            return
+            if tp_orders and sl_orders:
+                print(f"⏸️ {symbol}: Позиция и TP/SL уже стоят")
+                return
+            else:
+                for o in open_orders:
+                    client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
+                entry_price = float(position['entryPrice'])
+                side = "LONG" if float(position['positionAmt']) > 0 else "SHORT"
+                if side == 'LONG':
+                    sl = round(entry_price * 0.99, 2)
+                    tp = round(entry_price * 1.05, 2)
+                    client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
+                                                stopPrice=tp, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                    client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET",
+                                                stopPrice=sl, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                else:
+                    sl = round(entry_price * 1.01, 2)
+                    tp = round(entry_price * 0.95, 2)
+                    client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
+                                                stopPrice=tp, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                    client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET",
+                                                stopPrice=sl, closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
+                print(f"🔁 {symbol}: TP/SL установлены повторно")
+                return
 
         if open_orders:
             for o in open_orders:
@@ -165,22 +189,22 @@ def analyze_and_trade(symbol):
         adx = latest['adx']
 
         if adx < 25 and price <= low * 1.01 and rsi < 40 and price < ema20 < ema50:
-            stop_loss = round(price * 0.99, 2)
-            take_profit = round(price * 1.05, 2)
+            sl = round(price * 0.99, 2)
+            tp = round(price * 1.05, 2)
             client.futures_create_order(symbol=symbol, side="BUY", type="MARKET", quantity=qty)
-            client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET", stopPrice=take_profit,
+            client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET", stopPrice=tp,
                                         closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-            client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET", stopPrice=stop_loss,
+            client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET", stopPrice=sl,
                                         closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
             print(f"✅ {symbol} | ЛОНГ | Цена: {price} | Qty: {qty}")
 
         elif adx < 25 and price >= high * 0.99 and rsi > 60 and price > ema20 > ema50:
-            stop_loss = round(price * 1.01, 2)
-            take_profit = round(price * 0.95, 2)
+            sl = round(price * 1.01, 2)
+            tp = round(price * 0.95, 2)
             client.futures_create_order(symbol=symbol, side="SELL", type="MARKET", quantity=qty)
-            client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET", stopPrice=take_profit,
+            client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET", stopPrice=tp,
                                         closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
-            client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET", stopPrice=stop_loss,
+            client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET", stopPrice=sl,
                                         closePosition=True, timeInForce='GTC', workingType='MARK_PRICE')
             print(f"✅ {symbol} | ШОРТ | Цена: {price} | Qty: {qty}")
 
