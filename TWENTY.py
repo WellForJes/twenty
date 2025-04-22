@@ -193,10 +193,10 @@ def analyze_and_trade(symbol):
 
         print(f"{symbol}: Режим — {mode}, Цена: {price}, RSI: {rsi:.2f}, EMA20: {ema20:.2f}, EMA50: {ema50:.2f}, ADX: {adx:.2f}")
 
-        risk_amount = DEPOSIT * RISK_PER_TRADE
-        position_size = risk_amount / (price * 0.01)
+        position_value = DEPOSIT * POSITION_PERCENT
+        qty = position_value / price
         prec = symbol_precisions.get(symbol, 2)
-        qty = math.floor(position_size * 10**prec) / 10**prec
+        qty = math.floor(qty * 10**prec) / 10**prec
         min_qty = min_quantities.get(symbol, 0.001)
         if qty < min_qty:
             print(f"⛔ {symbol}: qty слишком мала")
