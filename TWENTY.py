@@ -20,7 +20,7 @@ last_telegram_report_time = 0
 # === Настройки депозита ===
 DEPOSIT = 20
 POSITION_PERCENT = 0.2  # 20% депозита на сделку
-RISK_PER_TRADE = 0.05  # по-прежнему используем для расчёта позиции
+RISK_PER_TRADE = 0.05
 
 # === Загрузка API ключей ===
 load_dotenv()
