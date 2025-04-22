@@ -19,8 +19,6 @@ last_telegram_report_time = 0
 
 # === Настройки депозита ===
 DEPOSIT = 20
-POSITION_PERCENT = 0.25  # 25% депозита на сделку
-RISK_PER_TRADE = 0.05
 
 # === Загрузка API ключей ===
 load_dotenv()
@@ -193,7 +191,9 @@ def analyze_and_trade(symbol):
 
         print(f"{symbol}: Режим — {mode}, Цена: {price}, RSI: {rsi:.2f}, EMA20: {ema20:.2f}, EMA50: {ema50:.2f}, ADX: {adx:.2f}")
 
-        position_value = DEPOSIT * POSITION_PERCENT
+        margin = 5
+        leverage = 20
+        position_value = margin * leverage
         qty = position_value / price
         prec = symbol_precisions.get(symbol, 2)
         qty = math.floor(qty * 10**prec) / 10**prec
@@ -207,7 +207,7 @@ def analyze_and_trade(symbol):
         position = next((p for p in positions if float(p['positionAmt']) != 0), None)
 
         if position:
-            return  # уже в позиции
+            return
 
         if open_orders:
             for o in open_orders:
