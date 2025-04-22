@@ -35,10 +35,10 @@ def send_status_to_telegram():
         tz = pytz.timezone("Europe/Kyiv")
         now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
-        # Пример данных, можно заменить на свои
+        # Примерные данные. Можно расширить.
         balance = 20.0
-        total_pnl = 0.0
-        positions_text = "Статус открытых позиций пока не реализован."
+        pnl = 0.0
+        positions_text = "Позиции в процессе анализа."
 
         logs = log_buffer.getvalue()
         last_lines = logs.strip().splitlines()[-20:]
@@ -48,7 +48,7 @@ def send_status_to_telegram():
             f"🟢 Боевой Бот работает. Последний цикл: {now} (Kyiv)\n\n"
             f"{positions_text}\n\n"
             f"💰 Баланс: {round(balance, 2)} USDT\n"
-            f"📊 Чистый PnL: {round(total_pnl, 2)} USDT\n\n"
+            f"📊 Чистый PnL: {round(pnl, 2)} USDT\n\n"
             f"📝 <b>Логи:</b>\n<pre>{logs_text}</pre>"
         )
 
@@ -67,9 +67,7 @@ def send_status_to_telegram():
 
 # === Настройки депозита и риска ===
 TOTAL_DEPOSIT = 20
-RISK_PER_TRADE = 0.01
-MAX_RISK_AMOUNT = TOTAL_DEPOSIT * RISK_PER_TRADE
-deposit_in_use = False
+RISK_PER_TRADE = 0.10  # риск в $ на одну сделку
 
 # === API-ключи Binance ===
 load_dotenv()
@@ -106,17 +104,17 @@ INTERVAL = Client.KLINE_INTERVAL_15MINUTE
 LIMIT = 100
 
 def analyze_and_trade(symbol):
-    global deposit_in_use
     try:
         print(f"▶️ Начинаю анализ: {symbol}")
+
         open_orders = client.futures_get_open_orders(symbol=symbol)
         positions = client.futures_position_information(symbol=symbol)
         position = next((p for p in positions if float(p['positionAmt']) != 0), None)
 
         if position:
-            deposit_in_use = True
             entry_price = float(position['entryPrice'])
             side = 'LONG' if float(position['positionAmt']) > 0 else 'SHORT'
+
             tp_orders = [o for o in open_orders if o['type'] == "TAKE_PROFIT_MARKET"]
             sl_orders = [o for o in open_orders if o['type'] == "STOP_MARKET"]
 
@@ -153,10 +151,6 @@ def analyze_and_trade(symbol):
                 print(f"⏸ {symbol}: Позиция уже открыта, TP/SL в порядке")
             return
 
-        if deposit_in_use:
-            print(f"❌ {symbol}: Депозит уже используется — пропускаю")
-            return
-
         klines = client.futures_klines(symbol=symbol, interval=INTERVAL, limit=LIMIT)
         df = pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close", "volume",
                                            "close_time", "quote_asset_volume", "number_of_trades",
@@ -175,38 +169,42 @@ def analyze_and_trade(symbol):
         ema20 = latest['ema20']
         ema50 = latest['ema50']
         adx = latest['adx']
-
-        qty_in_usd = min(MAX_RISK_AMOUNT / 0.01, TOTAL_DEPOSIT)
-        qty_raw = qty_in_usd / price
         prec = symbol_precisions.get(symbol, 2)
-        qty = math.floor(qty_raw * 10**prec) / 10**prec
 
+        # === Вход по стратегии ===
         if adx < 25 and price <= low * 1.01 and rsi < 40 and price < ema20 < ema50:
-            sl = round(price * 0.99, 2)
+            stop_price = price * 0.99
+            loss_per_unit = price - stop_price
+            quantity = RISK_PER_TRADE / loss_per_unit
+            quantity = math.floor(quantity * 10**prec) / 10**prec
             tp = round(price * 1.05, 2)
-            client.futures_create_order(symbol=symbol, side="BUY", type="MARKET", quantity=qty)
+            sl = round(stop_price, 2)
+
+            client.futures_create_order(symbol=symbol, side="BUY", type="MARKET", quantity=quantity)
             client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
                                         stopPrice=tp, closePosition=True,
                                         timeInForce='GTC', workingType='MARK_PRICE')
             client.futures_create_order(symbol=symbol, side="SELL", type="STOP_MARKET",
                                         stopPrice=sl, closePosition=True,
                                         timeInForce='GTC', workingType='MARK_PRICE')
-            print(f"✅ {symbol} | ЛОНГ | Цена: {price} | Qty: {qty} | TP: {tp} | SL: {sl}")
-            deposit_in_use = True
+            print(f"✅ {symbol} | ЛОНГ | Цена: {price} | Qty: {quantity} | TP: {tp} | SL: {sl}")
 
         elif adx < 25 and price >= high * 0.99 and rsi > 60 and price > ema20 > ema50:
-            sl = round(price * 1.01, 2)
+            stop_price = price * 1.01
+            loss_per_unit = stop_price - price
+            quantity = RISK_PER_TRADE / loss_per_unit
+            quantity = math.floor(quantity * 10**prec) / 10**prec
             tp = round(price * 0.95, 2)
-            client.futures_create_order(symbol=symbol, side="SELL", type="MARKET", quantity=qty)
+            sl = round(stop_price, 2)
+
+            client.futures_create_order(symbol=symbol, side="SELL", type="MARKET", quantity=quantity)
             client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
                                         stopPrice=tp, closePosition=True,
                                         timeInForce='GTC', workingType='MARK_PRICE')
             client.futures_create_order(symbol=symbol, side="BUY", type="STOP_MARKET",
                                         stopPrice=sl, closePosition=True,
                                         timeInForce='GTC', workingType='MARK_PRICE')
-            print(f"✅ {symbol} | ШОРТ | Цена: {price} | Qty: {qty} | TP: {tp} | SL: {sl}")
-            deposit_in_use = True
-
+            print(f"✅ {symbol} | ШОРТ | Цена: {price} | Qty: {quantity} | TP: {tp} | SL: {sl}")
         else:
             print(f"{symbol}: Условия не выполнены")
 
@@ -214,7 +212,6 @@ def analyze_and_trade(symbol):
         print(f"❌ Ошибка при анализе {symbol}: {type(e).__name__} — {e}")
 
 while True:
-    deposit_in_use = False
     tz = pytz.timezone("Europe/Kyiv")
     now = datetime.now(tz).strftime("%H:%M:%S")
     print(f"\n🕒 Анализ монет ({now}):")
