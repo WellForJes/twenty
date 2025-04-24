@@ -12,7 +12,7 @@ from ta.trend import EMAIndicator, ADXIndicator
 from dotenv import load_dotenv
 
 # === Telegram параметры ===
-TELEGRAM_TOKEN = "7797995733:AAENKe8raT-UB0f98JEd5lEh93fvr2wED5o"
+TELEGRAM_TOKEN = "7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U"
 TELEGRAM_CHAT_ID = "349999939"
 last_telegram_report_time = 0
 
