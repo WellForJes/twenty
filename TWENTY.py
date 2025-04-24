@@ -19,6 +19,8 @@ last_telegram_report_time = 0
 # === Настройки депозита и риска ===
 TOTAL_DEPOSIT = 20
 RISK_PER_TRADE = 0.10  # риск в $ на одну сделку (фиксированный убыток)
+TAKE_PROFIT_MULTIPLIER = 1.03  # тейк-профит (например, 1.03 = +3%)
+STOP_LOSS_MULTIPLIER = 0.99    # стоп-лосс (например, 0.99 = -1%)
 
 # === Telegram уведомление ===
 def send_status_to_telegram():
@@ -102,8 +104,8 @@ def analyze_and_trade(symbol):
                     client.futures_cancel_order(symbol=symbol, orderId=o['orderId'])
 
                 if side == 'LONG':
-                    stop_loss = round(entry_price * 0.99, 2)
-                    take_profit = round(entry_price * 1.05, 2)
+                    stop_loss = round(entry_price * STOP_LOSS_MULTIPLIER, 4)
+                    take_profit = round(entry_price * TAKE_PROFIT_MULTIPLIER, 4)
                     client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
                                                 stopPrice=take_profit, closePosition=True,
                                                 timeInForce='GTC', workingType='MARK_PRICE')
@@ -112,8 +114,8 @@ def analyze_and_trade(symbol):
                                                 timeInForce='GTC', workingType='MARK_PRICE')
                     print(f"\U0001F501 {symbol}: TP/SL восстановлены для LONG")
                 else:
-                    stop_loss = round(entry_price * 1.01, 2)
-                    take_profit = round(entry_price * 0.95, 2)
+                    stop_loss = round(entry_price * (2 - STOP_LOSS_MULTIPLIER), 4)
+                    take_profit = round(entry_price * (2 - TAKE_PROFIT_MULTIPLIER), 4)
                     client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
                                                 stopPrice=take_profit, closePosition=True,
                                                 timeInForce='GTC', workingType='MARK_PRICE')
@@ -149,12 +151,12 @@ def analyze_and_trade(symbol):
 
         # === Логика входа по условиям стратегии ===
         if adx < 25 and price <= low * 1.01 and rsi < 40 and price < ema20 < ema50:
-            stop_price = price * 0.99
+            stop_price = price * STOP_LOSS_MULTIPLIER
             loss_per_unit = price - stop_price
             quantity = RISK_PER_TRADE / loss_per_unit
             quantity = math.floor(quantity * 10**prec) / 10**prec
-            take_profit = round(price * 1.05, 2)
-            stop_loss = round(stop_price, 2)
+            take_profit = round(price * TAKE_PROFIT_MULTIPLIER, 4)
+            stop_loss = round(stop_price, 4)
 
             client.futures_create_order(symbol=symbol, side="BUY", type="MARKET", quantity=quantity)
             client.futures_create_order(symbol=symbol, side="SELL", type="TAKE_PROFIT_MARKET",
@@ -166,12 +168,12 @@ def analyze_and_trade(symbol):
             print(f"\u2705 {symbol} | ЛОНГ | Цена: {price} | Qty: {quantity} | TP: {take_profit} | SL: {stop_loss}")
 
         elif adx < 25 and price >= high * 0.99 and rsi > 60 and price > ema20 > ema50:
-            stop_price = price * 1.01
+            stop_price = price * (2 - STOP_LOSS_MULTIPLIER)
             loss_per_unit = stop_price - price
             quantity = RISK_PER_TRADE / loss_per_unit
             quantity = math.floor(quantity * 10**prec) / 10**prec
-            take_profit = round(price * 0.95, 2)
-            stop_loss = round(stop_price, 2)
+            take_profit = round(price * (2 - TAKE_PROFIT_MULTIPLIER), 4)
+            stop_loss = round(stop_price, 4)
 
             client.futures_create_order(symbol=symbol, side="SELL", type="MARKET", quantity=quantity)
             client.futures_create_order(symbol=symbol, side="BUY", type="TAKE_PROFIT_MARKET",
