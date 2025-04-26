@@ -23,8 +23,8 @@ INTERVAL = Client.KLINE_INTERVAL_15MINUTE
 LIMIT = 100
 
 # === Telegram ===
-TELEGRAM_TOKEN = os.getenv("7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U")
-TELEGRAM_CHAT_ID = os.getenv("349999939")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
