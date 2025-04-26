@@ -4,3 +4,4 @@ ta
 requests
 pytz
 cryptography
+aiohttp
