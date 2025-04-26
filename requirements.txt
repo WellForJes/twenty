@@ -1,6 +1,5 @@
-python-binance
-ta
-python-dotenv
+binance
 pandas
+ta
 requests
 pytz
