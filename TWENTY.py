@@ -32,7 +32,7 @@ def send_telegram(message):
     try:
         requests.post(url, data=payload)
     except Exception as e:
-        pass  # Ошибку отправки телеги игнорируем для стабильности
+        pass
 
 # === Binance API ===
 api_key = os.getenv("BINANCE_API_KEY")
@@ -43,6 +43,9 @@ client = Client(api_key, api_secret)
 open_positions = []
 last_log_time = time.time()
 logs = []
+
+# Отправляем сообщение о старте сразу после запуска
+send_telegram("🟢 Бот запущен и активен. Начинаю работу!")
 
 while True:
     try:
