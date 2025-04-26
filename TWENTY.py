@@ -52,6 +52,7 @@ while True:
         current_balance = TOTAL_DEPOSIT - sum([p['amount'] for p in open_positions if not p['closed']])
         session_logs = []
         for symbol in SYMBOLS:
+            reasons = []
             df = pd.DataFrame(client.futures_klines(symbol=symbol, interval=INTERVAL, limit=LIMIT))
             df.columns = ["timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_asset_volume",
                           "number_of_trades", "taker_buy_base_vol", "taker_buy_quote_vol", "ignore"]
@@ -81,6 +82,26 @@ while True:
             bullish_engulfing = df.iloc[-2]['close'] < df.iloc[-2]['open'] and df.iloc[-1]['close'] > df.iloc[-1]['open']
             bearish_engulfing = df.iloc[-2]['close'] > df.iloc[-2]['open'] and df.iloc[-1]['close'] < df.iloc[-1]['open']
 
+            base_condition = adx < 25 and abs(adx - df.iloc[-2]['adx']) < 5 and volume > volume_mean20 and candle_size > candle_size_mean20
+
+            if base_condition:
+                if ema20 > ema50:
+                    if not (price <= low * 1.01):
+                        reasons.append("❌ Цена выше поддержки")
+                    if not (rsi < 40):
+                        reasons.append("❌ RSI выше 40")
+                    if not bullish_engulfing:
+                        reasons.append("❌ Нет бычьего паттерна")
+                elif ema20 < ema50:
+                    if not (price >= high * 0.99):
+                        reasons.append("❌ Цена ниже сопротивления")
+                    if not (rsi > 60):
+                        reasons.append("❌ RSI ниже 60")
+                    if not bearish_engulfing:
+                        reasons.append("❌ Нет медвежьего паттерна")
+                else:
+                    reasons.append("❌ EMA не подтверждает направление")
+
             for pos in open_positions:
                 if pos['symbol'] == symbol and not pos['closed']:
                     if pos['side'] == 'long':
@@ -98,17 +119,24 @@ while True:
                             send_telegram(f"✅ {symbol} SHORT закрыт. PnL: {pnl:.2f} USDT")
                             pos['closed'] = True
 
-            if adx < 25 and abs(adx - df.iloc[-2]['adx']) < 5 and volume > volume_mean20 and candle_size > candle_size_mean20:
-                if ema20 > ema50 and price <= low * 1.01 and rsi < 40 and bullish_engulfing and current_balance * 0.1 <= TOTAL_DEPOSIT * MAX_DEPOSIT_USAGE:
+            if base_condition and not reasons and current_balance * 0.1 <= TOTAL_DEPOSIT * MAX_DEPOSIT_USAGE:
+                if ema20 > ema50 and price <= low * 1.01 and rsi < 40 and bullish_engulfing:
                     entry_amount = current_balance * 0.10
                     open_positions.append({'symbol': symbol, 'side': 'long', 'entry_price': price, 'amount': entry_amount, 'closed': False})
                     send_telegram(f"🚀 Открыт LONG по {symbol} по цене {price:.2f}")
-                elif ema20 < ema50 and price >= high * 0.99 and rsi > 60 and bearish_engulfing and current_balance * 0.1 <= TOTAL_DEPOSIT * MAX_DEPOSIT_USAGE:
+                elif ema20 < ema50 and price >= high * 0.99 and rsi > 60 and bearish_engulfing:
                     entry_amount = current_balance * 0.10
                     open_positions.append({'symbol': symbol, 'side': 'short', 'entry_price': price, 'amount': entry_amount, 'closed': False})
                     send_telegram(f"🚀 Открыт SHORT по {symbol} по цене {price:.2f}")
 
-            session_logs.append(f"🔍 {symbol}: Условия {'выполнены' if (adx < 25 and abs(adx - df.iloc[-2]['adx']) < 5 and volume > volume_mean20 and candle_size > candle_size_mean20) else 'не выполнены'}")
+            if base_condition:
+                if not reasons:
+                    session_logs.append(f"🔍 {symbol}: Условия выполнены и сделка открыта")
+                else:
+                    reason_text = "\n    ".join(reasons)
+                    session_logs.append(f"🔍 {symbol}: Условия выполнены, но сделка НЕ открыта:\n    {reason_text}")
+            else:
+                session_logs.append(f"🔍 {symbol}: Условия не выполнены")
 
         if time.time() - last_log_time >= 300:
             report = "\n".join(session_logs)
