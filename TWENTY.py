@@ -23,8 +23,8 @@ INTERVAL = Client.KLINE_INTERVAL_15MINUTE
 LIMIT = 100
 
 # === Telegram ===
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_TOKEN = "7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U"
+TELEGRAM_CHAT_ID = "349999939"
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -32,7 +32,7 @@ def send_telegram(message):
     try:
         requests.post(url, data=payload)
     except Exception as e:
-        print(f"Ошибка отправки в Telegram: {e}")
+        pass  # Ошибку отправки телеги игнорируем для стабильности
 
 # === Binance API ===
 api_key = os.getenv("BINANCE_API_KEY")
@@ -41,16 +41,19 @@ client = Client(api_key, api_secret)
 
 # === Стартовые переменные ===
 open_positions = []
+last_log_time = time.time()
+logs = []
 
 while True:
     try:
         current_balance = TOTAL_DEPOSIT - sum([p['amount'] for p in open_positions if not p['closed']])
+        session_logs = []
         for symbol in SYMBOLS:
             df = pd.DataFrame(client.futures_klines(symbol=symbol, interval=INTERVAL, limit=LIMIT))
             df.columns = ["timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_asset_volume",
                           "number_of_trades", "taker_buy_base_vol", "taker_buy_quote_vol", "ignore"]
             df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
-            
+
             df['rsi'] = RSIIndicator(df['close']).rsi()
             df['ema20'] = EMAIndicator(df['close'], window=20).ema_indicator()
             df['ema50'] = EMAIndicator(df['close'], window=50).ema_indicator()
@@ -75,7 +78,6 @@ while True:
             bullish_engulfing = df.iloc[-2]['close'] < df.iloc[-2]['open'] and df.iloc[-1]['close'] > df.iloc[-1]['open']
             bearish_engulfing = df.iloc[-2]['close'] > df.iloc[-2]['open'] and df.iloc[-1]['close'] < df.iloc[-1]['open']
 
-            # Закрытие сделок
             for pos in open_positions:
                 if pos['symbol'] == symbol and not pos['closed']:
                     if pos['side'] == 'long':
@@ -93,7 +95,6 @@ while True:
                             send_telegram(f"✅ {symbol} SHORT закрыт. PnL: {pnl:.2f} USDT")
                             pos['closed'] = True
 
-            # Открытие сделок
             if adx < 25 and abs(adx - df.iloc[-2]['adx']) < 5 and volume > volume_mean20 and candle_size > candle_size_mean20:
                 if ema20 > ema50 and price <= low * 1.01 and rsi < 40 and bullish_engulfing and current_balance * 0.1 <= TOTAL_DEPOSIT * MAX_DEPOSIT_USAGE:
                     entry_amount = current_balance * 0.10
@@ -104,7 +105,14 @@ while True:
                     open_positions.append({'symbol': symbol, 'side': 'short', 'entry_price': price, 'amount': entry_amount, 'closed': False})
                     send_telegram(f"🚀 Открыт SHORT по {symbol} по цене {price:.2f}")
 
+            session_logs.append(f"🔍 {symbol}: Условия {'выполнены' if (adx < 25 and abs(adx - df.iloc[-2]['adx']) < 5 and volume > volume_mean20 and candle_size > candle_size_mean20) else 'не выполнены'}")
+
+        if time.time() - last_log_time >= 300:
+            report = "\n".join(session_logs)
+            send_telegram(f"🟢 Бот активен. Отчёт:\n{report}")
+            last_log_time = time.time()
+
     except Exception as e:
-        print(f"Ошибка обработки символа: {e}")
+        send_telegram(f"❌ Ошибка: {e}")
 
     time.sleep(60)
