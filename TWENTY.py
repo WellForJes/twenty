@@ -1,149 +1,133 @@
-import os
 import time
-import math
-import requests
 import pandas as pd
-from binance.client import Client
-from ta.momentum import RSIIndicator
-from ta.trend import EMAIndicator, ADXIndicator
+import numpy as np
+import requests
+import ta
+import asyncio
+import aiohttp
+import telegram
 from datetime import datetime
-import pytz
+from binance.um_futures import UMFutures
 
-# === Параметры ===
-TOTAL_DEPOSIT = 20
-TRAIL_START_TRIGGER = 1.01
-TRAIL_DISTANCE = 0.007
-MAX_DEPOSIT_USAGE = 0.5
-SYMBOLS = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "AVAXUSDT",
-    "LINKUSDT", "INJUSDT", "APTUSDT", "SUIUSDT",
-    "XRPUSDT", "NEARUSDT", "OPUSDT", "LDOUSDT", "FTMUSDT"
-]
-INTERVAL = Client.KLINE_INTERVAL_15MINUTE
-LIMIT = 100
+# Параметры подключения
+API_KEY = 'YOUR_API_KEY'
+API_SECRET = 'YOUR_API_SECRET'
+TELEGRAM_TOKEN = '7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U'
+TELEGRAM_CHAT_ID = '349999939'
 
-# === Telegram ===
-TELEGRAM_TOKEN = "7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U"
-TELEGRAM_CHAT_ID = "349999939"
+# Binance Futures клиент
+client = UMFutures(key=API_KEY, secret=API_SECRET)
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+# Telegram бот
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
+
+symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT']
+interval = '30m'
+leverage = 10
+risk_per_trade = 0.03
+
+positions = {}
+balance = None
+wins = 0
+losses = 0
+
+async def send_telegram(message):
     try:
-        requests.post(url, data=payload)
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
     except Exception as e:
-        pass
+        print(f"Ошибка отправки в Telegram: {e}")
 
-# === Binance API ===
-api_key = os.getenv("BINANCE_API_KEY")
-api_secret = os.getenv("BINANCE_API_SECRET")
-client = Client(api_key, api_secret)
+async def get_balance():
+    acc_info = client.balance()
+    for asset in acc_info:
+        if asset['asset'] == 'USDT':
+            return float(asset['balance'])
+    return 0
 
-# === Стартовые переменные ===
-open_positions = []
-last_log_time = time.time()
-logs = []
+def get_klines(symbol, interval, limit=500):
+    url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    data = requests.get(url).json()
+    df = pd.DataFrame(data, columns=[
+        'timestamp', 'open', 'high', 'low', 'close', 'volume',
+        'close_time', 'quote_asset_volume', 'number_of_trades',
+        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+    ])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    df.set_index('timestamp', inplace=True)
+    df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+    return df
 
-# Отправляем сообщение о старте сразу после запуска
-send_telegram("🟢 Бот запущен и активен. Начинаю работу!")
+def prepare_data(df):
+    df['EMA50'] = ta.trend.ema_indicator(df['close'], window=50)
+    df['EMA200'] = ta.trend.ema_indicator(df['close'], window=200)
+    df['RSI'] = ta.momentum.rsi(df['close'], window=14)
+    df['ADX'] = ta.trend.adx(df['high'], df['low'], df['close'], window=14)
+    df['volatility'] = (df['high'] - df['low']) / df['close']
+    df['volume_mean'] = df['volume'].rolling(window=50).mean()
+    df['CCI'] = ta.trend.cci(df['high'], df['low'], df['close'], window=20)
+    return df.dropna()
 
-while True:
-    try:
-        current_balance = TOTAL_DEPOSIT - sum([p['amount'] for p in open_positions if not p['closed']])
-        session_logs = []
-        for symbol in SYMBOLS:
-            reasons = []
-            df = pd.DataFrame(client.futures_klines(symbol=symbol, interval=INTERVAL, limit=LIMIT))
-            df.columns = ["timestamp", "open", "high", "low", "close", "volume", "close_time", "quote_asset_volume",
-                          "number_of_trades", "taker_buy_base_vol", "taker_buy_quote_vol", "ignore"]
-            df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
+async def trade_logic():
+    global balance, wins, losses
+    hourly_trend = {}
 
-            df['rsi'] = RSIIndicator(df['close']).rsi()
-            df['ema20'] = EMAIndicator(df['close'], window=20).ema_indicator()
-            df['ema50'] = EMAIndicator(df['close'], window=50).ema_indicator()
-            df['adx'] = ADXIndicator(df['high'], df['low'], df['close']).adx()
-            df['volume_mean20'] = df['volume'].rolling(window=20).mean()
-            df['candle_size'] = abs(df['close'] - df['open'])
-            df['candle_size_mean20'] = df['candle_size'].rolling(window=20).mean()
+    for symbol in symbols:
+        df_hour = get_klines(symbol, '1h', 200)
+        df_hour['EMA200_1h'] = ta.trend.ema_indicator(df_hour['close'], window=200)
+        hourly_trend[symbol] = df_hour
 
-            latest = df.iloc[-1]
-            price = latest['close']
-            low = df['close'].iloc[-20:].min()
-            high = df['close'].iloc[-20:].max()
-            rsi = latest['rsi']
-            ema20 = latest['ema20']
-            ema50 = latest['ema50']
-            adx = latest['adx']
-            volume = latest['volume']
-            volume_mean20 = latest['volume_mean20']
-            candle_size = latest['candle_size']
-            candle_size_mean20 = latest['candle_size_mean20']
+    while True:
+        try:
+            tasks = [asyncio.to_thread(get_klines, symbol, interval, 100) for symbol in symbols]
+            data = await asyncio.gather(*tasks)
 
-            bullish_engulfing = df.iloc[-2]['close'] < df.iloc[-2]['open'] and df.iloc[-1]['close'] > df.iloc[-1]['open']
-            bearish_engulfing = df.iloc[-2]['close'] > df.iloc[-2]['open'] and df.iloc[-1]['close'] < df.iloc[-1]['open']
+            for idx, symbol in enumerate(symbols):
+                df = prepare_data(data[idx])
+                last = df.iloc[-1]
 
-            base_condition = adx < 25 and abs(adx - df.iloc[-2]['adx']) < 5 and volume > volume_mean20 and candle_size > candle_size_mean20
+                # Обновляем баланс
+                balance = await get_balance()
+                trade_amount = balance * 0.10
 
-            if base_condition:
-                if ema20 > ema50:
-                    if not (price <= low * 1.01):
-                        reasons.append("❌ Цена выше поддержки")
-                    if not (rsi < 40):
-                        reasons.append("❌ RSI выше 40")
-                    if not bullish_engulfing:
-                        reasons.append("❌ Нет бычьего паттерна")
-                elif ema20 < ema50:
-                    if not (price >= high * 0.99):
-                        reasons.append("❌ Цена ниже сопротивления")
-                    if not (rsi > 60):
-                        reasons.append("❌ RSI ниже 60")
-                    if not bearish_engulfing:
-                        reasons.append("❌ Нет медвежьего паттерна")
+                hour_row = hourly_trend[symbol].loc[last.name.floor('h')]
+                ema200_1h = hour_row['EMA200_1h']
+
+                if symbol not in positions:
+                    if last['ADX'] > 20 and last['volatility'] > 0.002 and last['volume'] > last['volume_mean'] and abs(last['CCI']) > 100:
+                        if last['EMA50'] > last['EMA200'] and last['close'] > last['EMA200'] and last['close'] > ema200_1h:
+                            qty = round(trade_amount * leverage / last['close'], 3)
+                            client.new_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
+                            positions[symbol] = ('long', last['close'], trade_amount)
+                        elif last['EMA50'] < last['EMA200'] and last['close'] < last['EMA200'] and last['close'] < ema200_1h:
+                            qty = round(trade_amount * leverage / last['close'], 3)
+                            client.new_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
+                            positions[symbol] = ('short', last['close'], trade_amount)
+
                 else:
-                    reasons.append("❌ EMA не подтверждает направление")
+                    side, entry_price, alloc = positions[symbol]
+                    take_profit = entry_price * (1.007 if side == 'long' else 0.993)
+                    stop_loss = entry_price * (0.997 if side == 'long' else 1.003)
 
-            for pos in open_positions:
-                if pos['symbol'] == symbol and not pos['closed']:
-                    if pos['side'] == 'long':
-                        if price >= pos['entry_price'] * TRAIL_START_TRIGGER:
-                            pos['trail_price'] = max(pos.get('trail_price', 0), price * (1 - TRAIL_DISTANCE))
-                        if 'trail_price' in pos and price <= pos['trail_price']:
-                            pnl = (price - pos['entry_price']) / pos['entry_price'] * pos['amount']
-                            send_telegram(f"✅ {symbol} LONG закрыт. PnL: {pnl:.2f} USDT")
-                            pos['closed'] = True
-                    elif pos['side'] == 'short':
-                        if price <= pos['entry_price'] * (2 - TRAIL_START_TRIGGER):
-                            pos['trail_price'] = min(pos.get('trail_price', float('inf')), price * (1 + TRAIL_DISTANCE))
-                        if 'trail_price' in pos and price >= pos['trail_price']:
-                            pnl = (pos['entry_price'] - price) / pos['entry_price'] * pos['amount']
-                            send_telegram(f"✅ {symbol} SHORT закрыт. PnL: {pnl:.2f} USDT")
-                            pos['closed'] = True
+                    if (side == 'long' and last['low'] <= stop_loss) or (side == 'short' and last['high'] >= stop_loss):
+                        wins += 0
+                        losses += 1
+                        del positions[symbol]
+                    elif (side == 'long' and last['high'] >= take_profit) or (side == 'short' and last['low'] <= take_profit):
+                        wins += 1
+                        losses += 0
+                        del positions[symbol]
 
-            if base_condition and not reasons and current_balance * 0.1 <= TOTAL_DEPOSIT * MAX_DEPOSIT_USAGE:
-                if ema20 > ema50 and price <= low * 1.01 and rsi < 40 and bullish_engulfing:
-                    entry_amount = current_balance * 0.10
-                    open_positions.append({'symbol': symbol, 'side': 'long', 'entry_price': price, 'amount': entry_amount, 'closed': False})
-                    send_telegram(f"🚀 Открыт LONG по {symbol} по цене {price:.2f}")
-                elif ema20 < ema50 and price >= high * 0.99 and rsi > 60 and bearish_engulfing:
-                    entry_amount = current_balance * 0.10
-                    open_positions.append({'symbol': symbol, 'side': 'short', 'entry_price': price, 'amount': entry_amount, 'closed': False})
-                    send_telegram(f"🚀 Открыт SHORT по {symbol} по цене {price:.2f}")
+            await send_telegram(f"Бот работает ✅\nБаланс: {balance:.2f} USDT\nТекущие сделки: {len(positions)}\nПобеды: {wins}, Поражения: {losses}")
 
-            if base_condition:
-                if not reasons:
-                    session_logs.append(f"🔍 {symbol}: Условия выполнены и сделка открыта")
-                else:
-                    reason_text = "\n    ".join(reasons)
-                    session_logs.append(f"🔍 {symbol}: Условия выполнены, но сделка НЕ открыта:\n    {reason_text}")
-            else:
-                session_logs.append(f"🔍 {symbol}: Условия не выполнены")
+        except Exception as e:
+            print(f"Ошибка в торговле: {e}")
+            await send_telegram(f"Ошибка в торговле: {e}")
 
-        if time.time() - last_log_time >= 300:
-            report = "\n".join(session_logs)
-            send_telegram(f"🟢 Бот активен. Отчёт:\n{report}")
-            last_log_time = time.time()
+        await asyncio.sleep(600)  # каждые 10 минут
 
-    except Exception as e:
-        send_telegram(f"❌ Ошибка: {e}")
+async def main():
+    await send_telegram("Бот запущен ✅")
+    await trade_logic()
 
-    time.sleep(60)
+if __name__ == "__main__":
+    asyncio.run(main())
