@@ -1,50 +1,24 @@
-import time
 import pandas as pd
 import numpy as np
 import requests
 import ta
-import asyncio
-import aiohttp
+import matplotlib.pyplot as plt
+from binance.client import Client
+import time
 import telegram
-from datetime import datetime
-from binance.um_futures import UMFutures
 
-# Параметры подключения
-API_KEY = 'YOUR_API_KEY'
-API_SECRET = 'YOUR_API_SECRET'
-TELEGRAM_TOKEN = '7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U'
-TELEGRAM_CHAT_ID = '349999939'
+# Конфигурация
+API_KEY = 'your_api_key'
+API_SECRET = 'your_api_secret'
+TELEGRAM_TOKEN = 'your_telegram_bot_token'
+TELEGRAM_CHAT_ID = 'your_chat_id'
 
-# Binance Futures клиент
-client = UMFutures(key=API_KEY, secret=API_SECRET)
-
-# Telegram бот
+client = Client(API_KEY, API_SECRET)
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
-symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT']
-interval = '30m'
-leverage = 10
-risk_per_trade = 0.03
+# Функции
 
-positions = {}
-balance = None
-wins = 0
-losses = 0
-
-async def send_telegram(message):
-    try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except Exception as e:
-        print(f"Ошибка отправки в Telegram: {e}")
-
-async def get_balance():
-    acc_info = client.balance()
-    for asset in acc_info:
-        if asset['asset'] == 'USDT':
-            return float(asset['balance'])
-    return 0
-
-def get_klines(symbol, interval, limit=500):
+def get_binance_klines(symbol='BTCUSDT', interval='30m', limit=1000):
     url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
     data = requests.get(url).json()
     df = pd.DataFrame(data, columns=[
@@ -67,67 +41,90 @@ def prepare_data(df):
     df['CCI'] = ta.trend.cci(df['high'], df['low'], df['close'], window=20)
     return df.dropna()
 
-async def trade_logic():
-    global balance, wins, losses
-    hourly_trend = {}
+def send_telegram_message(message):
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
 
-    for symbol in symbols:
-        df_hour = get_klines(symbol, '1h', 200)
-        df_hour['EMA200_1h'] = ta.trend.ema_indicator(df_hour['close'], window=200)
-        hourly_trend[symbol] = df_hour
+# Торговая логика
+
+def trading_bot(symbols, interval='30m'):
+    balance = 20
+    free_balance = balance
+    positions = {}
+    risk_per_trade = 0.03
+
+    send_telegram_message("🤖 Бот запущен!")
 
     while True:
         try:
-            tasks = [asyncio.to_thread(get_klines, symbol, interval, 100) for symbol in symbols]
-            data = await asyncio.gather(*tasks)
+            for symbol in symbols:
+                df = get_binance_klines(symbol, interval=interval, limit=500)
+                df = prepare_data(df)
+                if df.empty:
+                    continue
 
-            for idx, symbol in enumerate(symbols):
-                df = prepare_data(data[idx])
-                last = df.iloc[-1]
-
-                # Обновляем баланс
-                balance = await get_balance()
-                trade_amount = balance * 0.10
-
-                hour_row = hourly_trend[symbol].loc[last.name.floor('h')]
-                ema200_1h = hour_row['EMA200_1h']
+                last_row = df.iloc[-1]
+                entry_price = last_row['close']
 
                 if symbol not in positions:
-                    if last['ADX'] > 20 and last['volatility'] > 0.002 and last['volume'] > last['volume_mean'] and abs(last['CCI']) > 100:
-                        if last['EMA50'] > last['EMA200'] and last['close'] > last['EMA200'] and last['close'] > ema200_1h:
-                            qty = round(trade_amount * leverage / last['close'], 3)
-                            client.new_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
-                            positions[symbol] = ('long', last['close'], trade_amount)
-                        elif last['EMA50'] < last['EMA200'] and last['close'] < last['EMA200'] and last['close'] < ema200_1h:
-                            qty = round(trade_amount * leverage / last['close'], 3)
-                            client.new_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
-                            positions[symbol] = ('short', last['close'], trade_amount)
+                    trade_amount = free_balance * 0.10
+                    if last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100:
+                        if last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200']:
+                            side = 'BUY'
+                            qty = round(trade_amount / entry_price, 3)
+                            client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
+                            take_profit = entry_price * 1.007
+                            stop_loss = entry_price * 0.997
+                            positions[symbol] = ('long', entry_price, stop_loss, take_profit, qty)
+                            free_balance -= trade_amount
+                        elif last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200']:
+                            side = 'SELL'
+                            qty = round(trade_amount / entry_price, 3)
+                            client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
+                            take_profit = entry_price * 0.993
+                            stop_loss = entry_price * 1.003
+                            positions[symbol] = ('short', entry_price, stop_loss, take_profit, qty)
+                            free_balance -= trade_amount
 
                 else:
-                    side, entry_price, alloc = positions[symbol]
-                    take_profit = entry_price * (1.007 if side == 'long' else 0.993)
-                    stop_loss = entry_price * (0.997 if side == 'long' else 1.003)
+                    direction, entry_price, stop_loss, take_profit, qty = positions[symbol]
+                    if direction == 'long':
+                        if last_row['low'] <= stop_loss:
+                            client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
+                            loss = trade_amount * risk_per_trade
+                            balance -= loss
+                            free_balance += trade_amount
+                            send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
+                            positions.pop(symbol)
+                        elif last_row['high'] >= take_profit:
+                            client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
+                            profit = trade_amount * risk_per_trade * 3
+                            balance += profit
+                            free_balance += trade_amount
+                            send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
+                            positions.pop(symbol)
+                    elif direction == 'short':
+                        if last_row['high'] >= stop_loss:
+                            client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
+                            loss = trade_amount * risk_per_trade
+                            balance -= loss
+                            free_balance += trade_amount
+                            send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
+                            positions.pop(symbol)
+                        elif last_row['low'] <= take_profit:
+                            client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
+                            profit = trade_amount * risk_per_trade * 3
+                            balance += profit
+                            free_balance += trade_amount
+                            send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
+                            positions.pop(symbol)
 
-                    if (side == 'long' and last['low'] <= stop_loss) or (side == 'short' and last['high'] >= stop_loss):
-                        wins += 0
-                        losses += 1
-                        del positions[symbol]
-                    elif (side == 'long' and last['high'] >= take_profit) or (side == 'short' and last['low'] <= take_profit):
-                        wins += 1
-                        losses += 0
-                        del positions[symbol]
-
-            await send_telegram(f"Бот работает ✅\nБаланс: {balance:.2f} USDT\nТекущие сделки: {len(positions)}\nПобеды: {wins}, Поражения: {losses}")
+            send_telegram_message(f"📊 Баланс: {balance:.2f} USD, Свободный: {free_balance:.2f} USD")
+            time.sleep(600)
 
         except Exception as e:
-            print(f"Ошибка в торговле: {e}")
-            await send_telegram(f"Ошибка в торговле: {e}")
+            send_telegram_message(f"⚠️ Ошибка: {str(e)}")
+            time.sleep(600)
 
-        await asyncio.sleep(600)  # каждые 10 минут
-
-async def main():
-    await send_telegram("Бот запущен ✅")
-    await trade_logic()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# Запуск
+symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT']
+trading_bot(symbols)
