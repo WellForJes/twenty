@@ -1,7 +1,7 @@
-python-binance
 pandas
-ta
+numpy
 requests
-pytz
-cryptography
-aiohttp
+ta
+matplotlib
+binance
+python-telegram-bot==13.15
