@@ -5,7 +5,6 @@ import ta
 import matplotlib.pyplot as plt
 from binance.client import Client
 import time
-import telegram
 import os
 
 # Конфигурация
@@ -15,7 +14,6 @@ TELEGRAM_TOKEN = '7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U'
 TELEGRAM_CHAT_ID = '349999939'
 
 client = Client(API_KEY, API_SECRET)
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 # Функции
 
@@ -43,8 +41,12 @@ def prepare_data(df):
     return df.dropna()
 
 def send_telegram_message(message):
-    import asyncio
-    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message))
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    try:
+        requests.post(url, data=data)
+    except Exception as e:
+        print(f"Ошибка отправки сообщения в Telegram: {e}")
 
 # Торговая логика
 
@@ -114,31 +116,31 @@ def trading_bot(symbols, interval='30m'):
                     if direction == 'long':
                         if last_row['low'] <= stop_loss:
                             client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
-                            loss = trade_amount * risk_per_trade
+                            loss = qty * entry_price * risk_per_trade
                             balance -= loss
-                            free_balance += trade_amount
+                            free_balance += qty * entry_price
                             send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
                             positions.pop(symbol)
                         elif last_row['high'] >= take_profit:
                             client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
-                            profit = trade_amount * risk_per_trade * 3
+                            profit = qty * entry_price * risk_per_trade * 3
                             balance += profit
-                            free_balance += trade_amount
+                            free_balance += qty * entry_price
                             send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
                             positions.pop(symbol)
                     elif direction == 'short':
                         if last_row['high'] >= stop_loss:
                             client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
-                            loss = trade_amount * risk_per_trade
+                            loss = qty * entry_price * risk_per_trade
                             balance -= loss
-                            free_balance += trade_amount
+                            free_balance += qty * entry_price
                             send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
                             positions.pop(symbol)
                         elif last_row['low'] <= take_profit:
                             client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
-                            profit = trade_amount * risk_per_trade * 3
+                            profit = qty * entry_price * risk_per_trade * 3
                             balance += profit
-                            free_balance += trade_amount
+                            free_balance += qty * entry_price
                             send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
                             positions.pop(symbol)
 
