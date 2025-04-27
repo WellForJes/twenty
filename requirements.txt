@@ -3,5 +3,6 @@ numpy
 requests
 ta
 matplotlib
-binance
-python-telegram-bot==13.15
+python-binance
+python-telegram-bot
+cryptography
