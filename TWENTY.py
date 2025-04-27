@@ -54,9 +54,16 @@ def trading_bot(symbols, interval='30m'):
 
     send_telegram_message("🤖 Бот запущен!")
 
+    hourly_data = {}
+    for symbol in symbols:
+        df_1h = get_binance_klines(symbol, interval='1h', limit=500)
+        df_1h['EMA200_1h'] = ta.trend.ema_indicator(df_1h['close'], window=200)
+        hourly_data[symbol] = df_1h
+
     while True:
         try:
             for symbol in symbols:
+                client.futures_change_leverage(symbol=symbol, leverage=10)
                 df = get_binance_klines(symbol, interval=interval, limit=500)
                 df = prepare_data(df)
                 if df.empty:
@@ -65,10 +72,17 @@ def trading_bot(symbols, interval='30m'):
                 last_row = df.iloc[-1]
                 entry_price = last_row['close']
 
+                # Подтверждение через EMA200 на 1h
+                current_hour = last_row.name.floor('h')
+                if current_hour in hourly_data[symbol].index:
+                    ema200_1h = hourly_data[symbol].loc[current_hour]['EMA200_1h']
+                else:
+                    continue
+
                 if symbol not in positions:
                     trade_amount = free_balance * 0.10
                     if last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100:
-                        if last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200']:
+                        if last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200'] and last_row['close'] > ema200_1h:
                             side = 'BUY'
                             qty = round(trade_amount / entry_price, 3)
                             client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
@@ -76,7 +90,7 @@ def trading_bot(symbols, interval='30m'):
                             stop_loss = entry_price * 0.997
                             positions[symbol] = ('long', entry_price, stop_loss, take_profit, qty)
                             free_balance -= trade_amount
-                        elif last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200']:
+                        elif last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200'] and last_row['close'] < ema200_1h:
                             side = 'SELL'
                             qty = round(trade_amount / entry_price, 3)
                             client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
