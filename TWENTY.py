@@ -4,17 +4,18 @@ import requests
 import ta
 import matplotlib.pyplot as plt
 from binance.client import Client
-import asyncio
-from telegram import Bot
+import time
+import telegram
+import os
 
 # Конфигурация
-API_KEY = 'your_api_key'
-API_SECRET = 'your_api_secret'
-TELEGRAM_TOKEN = 'your_telegram_bot_token'
-TELEGRAM_CHAT_ID = 'your_chat_id'
+API_KEY = os.getenv('BINANCE_API_KEY')
+API_SECRET = os.getenv('BINANCE_API_SECRET')
+TELEGRAM_TOKEN = '7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U'
+TELEGRAM_CHAT_ID = '349999939'
 
 client = Client(API_KEY, API_SECRET)
-bot = Bot(token=TELEGRAM_TOKEN)
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
 # Функции
 
@@ -41,20 +42,23 @@ def prepare_data(df):
     df['CCI'] = ta.trend.cci(df['high'], df['low'], df['close'], window=20)
     return df.dropna()
 
-async def send_telegram_message(message):
-    await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+def send_telegram_message(message):
+    import asyncio
+    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message))
 
 # Торговая логика
 
-async def trading_bot(symbols, interval='30m'):
+def trading_bot(symbols, interval='30m'):
     balance = 20
     free_balance = balance
     positions = {}
     risk_per_trade = 0.03
 
-    await send_telegram_message("🤖 Бот запущен!")
+    send_telegram_message("🤖 Бот запущен!")
 
     hourly_data = {}
+    last_hourly_update = time.time()
+
     for symbol in symbols:
         df_1h = get_binance_klines(symbol, interval='1h', limit=500)
         df_1h['EMA200_1h'] = ta.trend.ema_indicator(df_1h['close'], window=200)
@@ -62,6 +66,13 @@ async def trading_bot(symbols, interval='30m'):
 
     while True:
         try:
+            if time.time() - last_hourly_update > 3600:
+                for symbol in symbols:
+                    df_1h = get_binance_klines(symbol, interval='1h', limit=500)
+                    df_1h['EMA200_1h'] = ta.trend.ema_indicator(df_1h['close'], window=200)
+                    hourly_data[symbol] = df_1h
+                last_hourly_update = time.time()
+
             for symbol in symbols:
                 client.futures_change_leverage(symbol=symbol, leverage=10)
                 df = get_binance_klines(symbol, interval=interval, limit=500)
@@ -106,39 +117,38 @@ async def trading_bot(symbols, interval='30m'):
                             loss = trade_amount * risk_per_trade
                             balance -= loss
                             free_balance += trade_amount
-                            await send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
-                            del positions[symbol]
+                            send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
+                            positions.pop(symbol)
                         elif last_row['high'] >= take_profit:
                             client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
                             profit = trade_amount * risk_per_trade * 3
                             balance += profit
                             free_balance += trade_amount
-                            await send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
-                            del positions[symbol]
+                            send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
+                            positions.pop(symbol)
                     elif direction == 'short':
                         if last_row['high'] >= stop_loss:
                             client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
                             loss = trade_amount * risk_per_trade
                             balance -= loss
                             free_balance += trade_amount
-                            await send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
-                            del positions[symbol]
+                            send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
+                            positions.pop(symbol)
                         elif last_row['low'] <= take_profit:
                             client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
                             profit = trade_amount * risk_per_trade * 3
                             balance += profit
                             free_balance += trade_amount
-                            await send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
-                            del positions[symbol]
+                            send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
+                            positions.pop(symbol)
 
-            await send_telegram_message(f"📊 Баланс: {balance:.2f} USD, Свободный: {free_balance:.2f} USD")
-            await asyncio.sleep(600)
+            send_telegram_message(f"📊 Баланс: {balance:.2f} USD, Свободный: {free_balance:.2f} USD")
+            time.sleep(600)
 
         except Exception as e:
-            await send_telegram_message(f"⚠️ Ошибка: {str(e)}")
-            await asyncio.sleep(600)
+            send_telegram_message(f"⚠️ Ошибка: {str(e)}")
+            time.sleep(600)
 
 # Запуск
-
 symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT']
-asyncio.run(trading_bot(symbols))
+trading_bot(symbols)
