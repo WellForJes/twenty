@@ -4,6 +4,7 @@ import requests
 import ta
 import asyncio
 import os
+import time 
 from binance.client import Client
 import telegram
 
