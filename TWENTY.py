@@ -52,13 +52,13 @@ async def send_telegram_message(message):
 
 # Торговая логика
 
-def trading_bot(symbols, interval='30m'):
+async def trading_bot(symbols, interval='30m'):
     balance = 30
     free_balance = balance
     positions = {}
     risk_per_trade = 0.03
 
-    asyncio.run(send_telegram_message("🤖 Бот запущен!"))
+    await send_telegram_message("🤖 Бот запущен!")
 
     hourly_data = {}
     last_hourly_update = time.time()
@@ -137,14 +137,14 @@ def trading_bot(symbols, interval='30m'):
                                 loss = trade_amount * risk_per_trade
                                 balance -= loss
                                 free_balance += trade_amount
-                                asyncio.run(send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD"))
+                                await send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
                                 positions.pop(symbol)
                             elif last_row['high'] >= take_profit:
                                 client.futures_create_order(symbol=symbol, side='SELL', type='MARKET', quantity=qty)
                                 profit = trade_amount * risk_per_trade * 3
                                 balance += profit
                                 free_balance += trade_amount
-                                asyncio.run(send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD"))
+                                await send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
                                 positions.pop(symbol)
                         elif direction == 'short':
                             if last_row['high'] >= stop_loss:
@@ -152,27 +152,27 @@ def trading_bot(symbols, interval='30m'):
                                 loss = trade_amount * risk_per_trade
                                 balance -= loss
                                 free_balance += trade_amount
-                                asyncio.run(send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD"))
+                                await send_telegram_message(f"❌ Stop Loss {symbol}: {loss:.2f} USD")
                                 positions.pop(symbol)
                             elif last_row['low'] <= take_profit:
                                 client.futures_create_order(symbol=symbol, side='BUY', type='MARKET', quantity=qty)
                                 profit = trade_amount * risk_per_trade * 3
                                 balance += profit
                                 free_balance += trade_amount
-                                asyncio.run(send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD"))
+                                await send_telegram_message(f"✅ Take Profit {symbol}: {profit:.2f} USD")
                                 positions.pop(symbol)
 
                 except Exception as ex:
                     session_log += f"{symbol}: Ошибка {str(ex)}\n"
 
             session_log += f"\nБаланс: {balance:.2f} USD | Свободный баланс: {free_balance:.2f} USD"
-            asyncio.run(send_telegram_message(session_log))
-            time.sleep(300)
+            await send_telegram_message(session_log)
+            await asyncio.sleep(300)
 
         except Exception as e:
-            asyncio.run(send_telegram_message(f"⚠️ Ошибка: {str(e)}"))
-            time.sleep(300)
+            await send_telegram_message(f"⚠️ Ошибка: {str(e)}")
+            await asyncio.sleep(300)
 
 # Запуск
 symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT']
-trading_bot(symbols)
+asyncio.run(trading_bot(symbols))
