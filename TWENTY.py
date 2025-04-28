@@ -4,7 +4,7 @@ import requests
 import ta
 import asyncio
 import os
-import time 
+import time
 from binance.client import Client
 import telegram
 
@@ -59,7 +59,13 @@ async def trading_bot(symbols, interval='30m'):
     await send_telegram_message("🤖 Бот запущен!")
 
     hourly_data = {}
-    last_hourly_update = 0
+
+    # Инициализация EMA200 1h сразу при старте
+    for symbol in symbols:
+        df_1h = get_binance_klines(symbol, interval='1h', limit=200)
+        df_1h['EMA200_1h'] = ta.trend.ema_indicator(df_1h['close'], window=200)
+        hourly_data[symbol] = df_1h
+    last_hourly_update = time.time()
 
     while True:
         try:
@@ -160,7 +166,7 @@ async def trading_bot(symbols, interval='30m'):
                             if float(pos['positionAmt']) == 0:
                                 side, trade_amount = positions[symbol]
                                 realized = float(pos['unrealizedProfit'])
-                                fee = trade_amount * 0.0008  # учёт комиссии 0.04% вход + 0.04% выход
+                                fee = trade_amount * 0.0008
 
                                 if realized >= 0:
                                     balance += trade_amount * 0.30 - fee
