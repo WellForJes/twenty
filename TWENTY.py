@@ -99,10 +99,10 @@ async def trading_bot(symbols, interval='30m'):
                         session_log += f"{symbol}: Нет данных 1H\n"
                         continue
 
-                    if symbol not in positions:
+                    if symbol not in positions and len(positions) < 5:
                         if last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100:
                             if symbol == 'BTCUSDT':
-                                trade_amount = 5  # всегда минимум 5$
+                                trade_amount = 5
                             elif symbol == 'ETHUSDT':
                                 trade_amount = free_balance * 0.7
                             else:
@@ -110,6 +110,9 @@ async def trading_bot(symbols, interval='30m'):
 
                             precision = precisions.get(symbol, 3)
                             qty = round(trade_amount / entry_price, precision)
+
+                            if symbol == 'BTCUSDT' and qty == 0:
+                                qty = 0.001
 
                             notional = qty * entry_price
                             if notional >= 5:
@@ -179,5 +182,5 @@ async def trading_bot(symbols, interval='30m'):
             await asyncio.sleep(300)
 
 # Запуск
-symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT']
+symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT', 'AVAXUSDT', 'MATICUSDT']
 asyncio.run(trading_bot(symbols))
