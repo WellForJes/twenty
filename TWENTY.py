@@ -18,6 +18,10 @@ TELEGRAM_CHAT_ID = '349999939'
 client = Client(API_KEY, API_SECRET)
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
+# Получаем точности для монет
+exchange_info = client.futures_exchange_info()
+precisions = {s['symbol']: s['quantityPrecision'] for s in exchange_info['symbols']}
+
 # Функции
 
 def get_binance_klines(symbol='BTCUSDT', interval='30m', limit=1000):
@@ -68,7 +72,6 @@ def trading_bot(symbols, interval='30m'):
         try:
             session_log = "📈 Проверка рынка:\n"
 
-            # Обновляем данные 1h раз в час
             if time.time() - last_hourly_update > 3600:
                 for symbol in symbols:
                     df_1h = get_binance_klines(symbol, interval='1h', limit=500)
@@ -98,9 +101,10 @@ def trading_bot(symbols, interval='30m'):
                     if symbol not in positions:
                         trade_amount = free_balance * 0.30
                         if last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100:
+                            precision = precisions.get(symbol, 3)
                             if last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200'] and last_row['close'] > ema200_1h:
                                 side = 'BUY'
-                                qty = round(trade_amount / entry_price, 3)
+                                qty = round(trade_amount / entry_price, precision)
                                 if qty * entry_price >= 5:
                                     client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
                                     take_profit = entry_price * 1.007
@@ -112,7 +116,7 @@ def trading_bot(symbols, interval='30m'):
                                     session_log += f"{symbol}: Слишком малая сумма\n"
                             elif last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200'] and last_row['close'] < ema200_1h:
                                 side = 'SELL'
-                                qty = round(trade_amount / entry_price, 3)
+                                qty = round(trade_amount / entry_price, precision)
                                 if qty * entry_price >= 5:
                                     client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
                                     take_profit = entry_price * 0.993
