@@ -99,7 +99,12 @@ async def trading_bot(symbols, interval='30m'):
                         continue
 
                     if symbol not in positions:
-                        trade_amount = free_balance * 0.50
+                        if symbol == 'BTCUSDT':
+                            trade_amount = free_balance * 0.9
+                        elif symbol == 'ETHUSDT':
+                            trade_amount = free_balance * 0.7
+                        else:
+                            trade_amount = free_balance * 0.5
                         if last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100:
                             precision = precisions.get(symbol, 3)
                             if last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200'] and last_row['close'] > ema200_1h:
