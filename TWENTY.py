@@ -21,6 +21,7 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 # Получаем точности для монет
 exchange_info = client.futures_exchange_info()
 precisions = {s['symbol']: s['quantityPrecision'] for s in exchange_info['symbols']}
+min_notional = {s['symbol']: float(s['filters'][0]['notional']) for s in exchange_info['symbols'] if 'notional' in s['filters'][0]}
 
 # Функции
 
@@ -99,38 +100,37 @@ async def trading_bot(symbols, interval='30m'):
                         continue
 
                     if symbol not in positions:
-                        if symbol == 'BTCUSDT':
-                            trade_amount = free_balance * 0.9
-                        elif symbol == 'ETHUSDT':
-                            trade_amount = free_balance * 0.7
-                        else:
-                            trade_amount = free_balance * 0.5
                         if last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100:
+                            if symbol == 'BTCUSDT':
+                                trade_amount = 5  # всегда минимум 5$
+                            elif symbol == 'ETHUSDT':
+                                trade_amount = free_balance * 0.7
+                            else:
+                                trade_amount = free_balance * 0.5
+
                             precision = precisions.get(symbol, 3)
-                            if last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200'] and last_row['close'] > ema200_1h:
-                                side = 'BUY'
-                                qty = round(trade_amount / entry_price, precision)
-                                if qty * entry_price >= 5:
+                            qty = round(trade_amount / entry_price, precision)
+
+                            notional = qty * entry_price
+                            if notional >= 5:
+                                if last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200'] and last_row['close'] > ema200_1h:
+                                    side = 'BUY'
                                     client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
                                     take_profit = entry_price * 1.007
                                     stop_loss = entry_price * 0.997
                                     positions[symbol] = ('long', entry_price, stop_loss, take_profit, qty, trade_amount)
                                     free_balance -= trade_amount
                                     session_log += f"{symbol}: Вход Long\n"
-                                else:
-                                    session_log += f"{symbol}: Слишком малая сумма\n"
-                            elif last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200'] and last_row['close'] < ema200_1h:
-                                side = 'SELL'
-                                qty = round(trade_amount / entry_price, precision)
-                                if qty * entry_price >= 5:
+                                elif last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200'] and last_row['close'] < ema200_1h:
+                                    side = 'SELL'
                                     client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
                                     take_profit = entry_price * 0.993
                                     stop_loss = entry_price * 1.003
                                     positions[symbol] = ('short', entry_price, stop_loss, take_profit, qty, trade_amount)
                                     free_balance -= trade_amount
                                     session_log += f"{symbol}: Вход Short\n"
-                                else:
-                                    session_log += f"{symbol}: Слишком малая сумма\n"
+                            else:
+                                session_log += f"{symbol}: Слишком малая сумма ({notional:.2f})\n"
                         else:
                             session_log += f"{symbol}: Условия не подходят\n"
 
