@@ -182,5 +182,5 @@ async def trading_bot(symbols, interval='30m'):
             await asyncio.sleep(300)
 
 # Запуск
-symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT', 'AVAXUSDT', 'MATICUSDT']
+symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'LTCUSDT', 'ADAUSDT', 'BNBUSDT', 'DOGEUSDT', 'AVAXUSDT']
 asyncio.run(trading_bot(symbols))
