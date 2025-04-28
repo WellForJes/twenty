@@ -67,18 +67,19 @@ async def trading_bot(symbols, interval='30m'):
 
     while True:
         try:
+            session_log = "\ud83d\udcc8 Проверка рынка:\n"
             for symbol in symbols:
                 try:
                     df = get_binance_klines(symbol, interval)
                     df = prepare_data(df)
                     if df.empty:
+                        session_log += f"{symbol}: Ошибка данных\n"
                         continue
 
                     last_row = df.iloc[-1]
                     entry_price = last_row['close']
                     precision = precisions.get(symbol, 3)
 
-                    # Получаем EMA200 с 1h
                     ema_1h = hourly_data[symbol].iloc[-1]['EMA200_1h']
 
                     if symbol not in positions:
@@ -88,65 +89,13 @@ async def trading_bot(symbols, interval='30m'):
                             abs(last_row['CCI']) > 100):
 
                             if (last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200'] and last_row['close'] > ema_1h):
-                                side = 'BUY'
-                                stop_loss = entry_price * 0.90
-                                take_profit = entry_price * 1.30
+                                session_log += f"{symbol}: Условия для лонга ✅\n"
                             elif (last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200'] and last_row['close'] < ema_1h):
-                                side = 'SELL'
-                                stop_loss = entry_price * 1.10
-                                take_profit = entry_price * 0.70
+                                session_log += f"{symbol}: Условия для шорта ✅\n"
                             else:
-                                continue
-
-                            trade_amount = free_balance * risk_per_trade
-                            qty = round(trade_amount / entry_price, precision)
-
-                            if qty * entry_price >= 5:
-                                order = client.futures_create_order(
-                                    symbol=symbol,
-                                    side=side,
-                                    type='MARKET',
-                                    quantity=qty
-                                )
-                                await send_telegram_message(f"📈 Открыта позиция {symbol}: {side} {qty} по {entry_price}")
-
-                                if side == 'BUY':
-                                    client.futures_create_order(
-                                        symbol=symbol,
-                                        side='SELL',
-                                        type='TAKE_PROFIT_MARKET',
-                                        quantity=qty,
-                                        stopPrice=take_profit,
-                                        closePosition=True
-                                    )
-                                    client.futures_create_order(
-                                        symbol=symbol,
-                                        side='SELL',
-                                        type='STOP_MARKET',
-                                        quantity=qty,
-                                        stopPrice=stop_loss,
-                                        closePosition=True
-                                    )
-                                else:
-                                    client.futures_create_order(
-                                        symbol=symbol,
-                                        side='BUY',
-                                        type='TAKE_PROFIT_MARKET',
-                                        quantity=qty,
-                                        stopPrice=take_profit,
-                                        closePosition=True
-                                    )
-                                    client.futures_create_order(
-                                        symbol=symbol,
-                                        side='BUY',
-                                        type='STOP_MARKET',
-                                        quantity=qty,
-                                        stopPrice=stop_loss,
-                                        closePosition=True
-                                    )
-
-                                free_balance -= trade_amount
-                                positions[symbol] = (side, trade_amount)
+                                session_log += f"{symbol}: Условия не подходят\n"
+                        else:
+                            session_log += f"{symbol}: Условия не подходят\n"
 
                     else:
                         open_positions = client.futures_position_information(symbol=symbol)
@@ -160,7 +109,6 @@ async def trading_bot(symbols, interval='30m'):
                                     profit = trade_amount * 0.30
                                     loss = trade_amount * 0.10
 
-                                # Пытаемся определить по марже был профит или убыток
                                 realized = float(pos['unrealizedProfit'])
                                 if realized >= 0:
                                     balance += profit
@@ -174,12 +122,14 @@ async def trading_bot(symbols, interval='30m'):
                                     del positions[symbol]
 
                 except Exception as ex:
-                    await send_telegram_message(f"⚠️ Ошибка по {symbol}: {str(ex)}")
+                    session_log += f"{symbol}: Ошибка {str(ex)}\n"
 
+            session_log += f"\nБаланс: {balance:.2f} USD | Свободный баланс: {free_balance:.2f} USD"
+            await send_telegram_message(session_log)
             await asyncio.sleep(300)
 
         except Exception as e:
-            await send_telegram_message(f"🔥 Ошибка в боте: {str(e)}")
+            await send_telegram_message(f"\ud83d\udd25 Ошибка в боте: {str(e)}")
             await asyncio.sleep(300)
 
 # Запуск
