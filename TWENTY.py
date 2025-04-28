@@ -67,7 +67,7 @@ async def trading_bot(symbols, interval='30m'):
 
     while True:
         try:
-            session_log = "\ud83d\udcc8 Проверка рынка:\n"
+            session_log = "📈 Проверка рынка:\n"
             for symbol in symbols:
                 try:
                     df = get_binance_klines(symbol, interval)
@@ -129,7 +129,7 @@ async def trading_bot(symbols, interval='30m'):
             await asyncio.sleep(300)
 
         except Exception as e:
-            await send_telegram_message(f"\ud83d\udd25 Ошибка в боте: {str(e)}")
+            await send_telegram_message(f"🔥 Ошибка в боте: {str(e)}")
             await asyncio.sleep(300)
 
 # Запуск
