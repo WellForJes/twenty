@@ -87,7 +87,7 @@ async def trading_bot(symbols, interval='30m'):
 
                     if symbol not in positions:
                         if (last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100):
-                            if (last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200'] and last_row['close'] > ema_1h):
+                            if (last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200']):
                                 side = 'BUY'
                                 trade_amount = free_balance * risk_per_trade
                                 qty = round(trade_amount / entry_price, precision)
@@ -95,16 +95,25 @@ async def trading_bot(symbols, interval='30m'):
                                     client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
                                     await send_telegram_message(f"✅ Открыта позиция: {symbol} {side} по цене {entry_price}")
 
-                                    if side == 'BUY':
-                                        tp_price = round(entry_price * 1.007, 5)
-                                        sl_price = round(entry_price * 0.997, 5)
-                                        client.futures_create_order(symbol=symbol, side='SELL', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
-                                        client.futures_create_order(symbol=symbol, side='SELL', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
-                                    else:
-                                        tp_price = round(entry_price * 0.993, 5)
-                                        sl_price = round(entry_price * 1.003, 5)
-                                        client.futures_create_order(symbol=symbol, side='BUY', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
-                                        client.futures_create_order(symbol=symbol, side='BUY', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
+                                    tp_price = round(entry_price * 1.007, 5)
+                                    sl_price = round(entry_price * 0.997, 5)
+                                    client.futures_create_order(symbol=symbol, side='SELL', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
+                                    client.futures_create_order(symbol=symbol, side='SELL', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
+
+                                    free_balance -= trade_amount
+                                    positions[symbol] = (side, trade_amount)
+                            elif (last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200']):
+                                side = 'SELL'
+                                trade_amount = free_balance * risk_per_trade
+                                qty = round(trade_amount / entry_price, precision)
+                                if qty * entry_price >= 5:
+                                    client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
+                                    await send_telegram_message(f"✅ Открыта позиция: {symbol} {side} по цене {entry_price}")
+
+                                    tp_price = round(entry_price * 0.993, 5)
+                                    sl_price = round(entry_price * 1.003, 5)
+                                    client.futures_create_order(symbol=symbol, side='BUY', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
+                                    client.futures_create_order(symbol=symbol, side='BUY', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
 
                                     free_balance -= trade_amount
                                     positions[symbol] = (side, trade_amount)
