@@ -11,8 +11,8 @@ import telegram
 # Конфигурация
 API_KEY = os.getenv('BINANCE_API_KEY')
 API_SECRET = os.getenv('BINANCE_API_SECRET')
-TELEGRAM_TOKEN = '7925464368:AAEmy9EL3z216z0y8ml4t7rulC1v3ZstQ0U'
-TELEGRAM_CHAT_ID = '349999939'
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 client = Client(API_KEY, API_SECRET)
 bot = telegram.Bot(token=TELEGRAM_TOKEN)
@@ -86,7 +86,7 @@ async def trading_bot(symbols, interval='30m'):
                     ema_1h = hourly_data[symbol].iloc[-1]['EMA200_1h']
 
                     if symbol not in positions:
-                        if (last_row['ADX'] > 20 and last_row['volatility'] > 0.002 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100):
+                        if (last_row['ADX'] > 20 and last_row['volatility'] > 0.0015 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100):
                             if (last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200']):
                                 side = 'BUY'
                                 trade_amount = free_balance * risk_per_trade
@@ -117,28 +117,8 @@ async def trading_bot(symbols, interval='30m'):
 
                                     free_balance -= trade_amount
                                     positions[symbol] = (side, trade_amount)
-                            else:
-                                session_log += f"{symbol}: Условия EMA не подходят\n"
                         else:
-                            session_log += f"{symbol}: Условия по фильтрам не подходят\n"
-                    else:
-                        open_positions = client.futures_position_information(symbol=symbol)
-                        for pos in open_positions:
-                            if float(pos['positionAmt']) == 0:
-                                side, trade_amount = positions[symbol]
-                                realized = float(pos['unrealizedProfit'])
-                                fee = trade_amount * 0.0008
-
-                                if realized >= 0:
-                                    balance += trade_amount * 0.30 - fee
-                                    await send_telegram_message(f"✅ Тейк профит по {symbol}! +{trade_amount * 0.30 - fee:.2f} USD")
-                                else:
-                                    balance -= trade_amount * 0.10 + fee
-                                    await send_telegram_message(f"❌ Стоп лосс по {symbol}! -{trade_amount * 0.10 + fee:.2f} USD")
-                                free_balance = balance
-
-                                if symbol in positions:
-                                    del positions[symbol]
+                            session_log += f"{symbol}: Условия не подходят\n"
 
                 except Exception as ex:
                     session_log += f"{symbol}: Ошибка {str(ex)}\n"
