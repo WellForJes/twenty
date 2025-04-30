@@ -21,7 +21,7 @@ exchange_info = client.futures_exchange_info()
 precisions = {s['symbol']: s['quantityPrecision'] for s in exchange_info['symbols']}
 
 # Минимальная сумма ордера, допустим с учётом плеча 10x можно торговать от $1
-MIN_ORDER_USD = 1.0
+MIN_ORDER_USD = 0.5
 
 
 def get_binance_klines(symbol, interval, limit=500):
@@ -119,8 +119,9 @@ async def trading_bot(symbols, interval='30m'):
                         qty = round(trade_amount / entry_price, precision)
                         order_value = qty * entry_price
                         if order_value < MIN_ORDER_USD:
-                            session_log += f"{symbol}: Недостаточно для входа (расчёт: ${order_value:.2f})\n"
-                            continue
+    session_log += f"{symbol}: Предупреждение — низкая сумма сделки (расчёт: ${order_value:.2f}, минимум $0.5, Binance может отклонить)
+"
+    # всё равно пробуем зайти
 
                         client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
                         await send_telegram_message(f"✅ Открыта позиция: {symbol} {side} по цене {entry_price}")
