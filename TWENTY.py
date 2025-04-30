@@ -20,6 +20,10 @@ bot = telegram.Bot(token=TELEGRAM_TOKEN)
 exchange_info = client.futures_exchange_info()
 precisions = {s['symbol']: s['quantityPrecision'] for s in exchange_info['symbols']}
 
+# Минимальная сумма ордера, допустим с учётом плеча 10x можно торговать от $1
+MIN_ORDER_USD = 1.0
+
+
 def get_binance_klines(symbol, interval, limit=500):
     url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
     data = requests.get(url).json()
@@ -33,6 +37,7 @@ def get_binance_klines(symbol, interval, limit=500):
     df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
     return df
 
+
 def prepare_data(df):
     df['EMA50'] = ta.trend.ema_indicator(df['close'], window=50)
     df['EMA200'] = ta.trend.ema_indicator(df['close'], window=200)
@@ -43,8 +48,10 @@ def prepare_data(df):
     df['CCI'] = ta.trend.cci(df['high'], df['low'], df['close'], window=20)
     return df.dropna()
 
+
 async def send_telegram_message(message):
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+
 
 async def trading_bot(symbols, interval='30m'):
     balance = 30
@@ -110,8 +117,9 @@ async def trading_bot(symbols, interval='30m'):
 
                         trade_amount = free_balance * risk_per_trade
                         qty = round(trade_amount / entry_price, precision)
-                        if qty * entry_price < 5:
-                            session_log += f"{symbol}: Недостаточно для минимального входа\n"
+                        order_value = qty * entry_price
+                        if order_value < MIN_ORDER_USD:
+                            session_log += f"{symbol}: Недостаточно для входа (расчёт: ${order_value:.2f})\n"
                             continue
 
                         client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
