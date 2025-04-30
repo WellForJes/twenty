@@ -86,39 +86,52 @@ async def trading_bot(symbols, interval='30m'):
                     ema_1h = hourly_data[symbol].iloc[-1]['EMA200_1h']
 
                     if symbol not in positions:
-                        if (last_row['ADX'] > 20 and last_row['volatility'] > 0.0015 and last_row['volume'] > last_row['volume_mean'] and abs(last_row['CCI']) > 100):
-                            if (last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200']):
-                                side = 'BUY'
-                                trade_amount = free_balance * risk_per_trade
-                                qty = round(trade_amount / entry_price, precision)
-                                if qty * entry_price >= 5:
-                                    client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
-                                    await send_telegram_message(f"✅ Открыта позиция: {symbol} {side} по цене {entry_price}")
+                        reasons = []
+                        if last_row['ADX'] <= 20:
+                            reasons.append("ADX <= 20")
+                        if last_row['volatility'] <= 0.0015:
+                            reasons.append("volatility слишком низкая")
+                        if last_row['volume'] <= last_row['volume_mean']:
+                            reasons.append("объём ниже среднего")
+                        if abs(last_row['CCI']) <= 100:
+                            reasons.append("CCI недостаточный")
 
-                                    tp_price = round(entry_price * 1.007, 5)
-                                    sl_price = round(entry_price * 0.997, 5)
-                                    client.futures_create_order(symbol=symbol, side='SELL', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
-                                    client.futures_create_order(symbol=symbol, side='SELL', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
+                        if reasons:
+                            session_log += f"{symbol}: Условия не подходят (" + ", ".join(reasons) + ")\n"
+                            continue
 
-                                    free_balance -= trade_amount
-                                    positions[symbol] = (side, trade_amount)
-                            elif (last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200']):
-                                side = 'SELL'
-                                trade_amount = free_balance * risk_per_trade
-                                qty = round(trade_amount / entry_price, precision)
-                                if qty * entry_price >= 5:
-                                    client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
-                                    await send_telegram_message(f"✅ Открыта позиция: {symbol} {side} по цене {entry_price}")
-
-                                    tp_price = round(entry_price * 0.993, 5)
-                                    sl_price = round(entry_price * 1.003, 5)
-                                    client.futures_create_order(symbol=symbol, side='BUY', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
-                                    client.futures_create_order(symbol=symbol, side='BUY', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
-
-                                    free_balance -= trade_amount
-                                    positions[symbol] = (side, trade_amount)
+                        if (last_row['EMA50'] > last_row['EMA200'] and last_row['close'] > last_row['EMA200']):
+                            side = 'BUY'
+                        elif (last_row['EMA50'] < last_row['EMA200'] and last_row['close'] < last_row['EMA200']):
+                            side = 'SELL'
                         else:
-                            session_log += f"{symbol}: Условия не подходят\n"
+                            session_log += f"{symbol}: Трендовые условия EMA не подходят\n"
+                            continue
+
+                        trade_amount = free_balance * risk_per_trade
+                        qty = round(trade_amount / entry_price, precision)
+                        if qty * entry_price < 5:
+                            session_log += f"{symbol}: Недостаточно для минимального входа\n"
+                            continue
+
+                        client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=qty)
+                        await send_telegram_message(f"✅ Открыта позиция: {symbol} {side} по цене {entry_price}")
+
+                        if side == 'BUY':
+                            tp_multiplier = 1.3 if last_row['volatility'] > 0.02 else 1.15
+                            tp_price = round(entry_price * tp_multiplier, 5)
+                            sl_price = round(entry_price * 0.9, 5)
+                            client.futures_create_order(symbol=symbol, side='SELL', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
+                            client.futures_create_order(symbol=symbol, side='SELL', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
+                        else:
+                            tp_multiplier = 0.7 if last_row['volatility'] > 0.02 else 0.85
+                            tp_price = round(entry_price * tp_multiplier, 5)
+                            sl_price = round(entry_price * 1.1, 5)
+                            client.futures_create_order(symbol=symbol, side='BUY', type='TAKE_PROFIT_MARKET', stopPrice=tp_price, closePosition=True)
+                            client.futures_create_order(symbol=symbol, side='BUY', type='STOP_MARKET', stopPrice=sl_price, closePosition=True)
+
+                        free_balance -= trade_amount
+                        positions[symbol] = (side, trade_amount)
 
                 except Exception as ex:
                     session_log += f"{symbol}: Ошибка {str(ex)}\n"
