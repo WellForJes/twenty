@@ -15,13 +15,13 @@ import numpy as np
 # === Отключаем предупреждения от ta-lib ===
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# === Переменные окружения (Render) ===
+# === Переменные окружения ===
 API_KEY = os.environ.get("BINANCE_API_KEY")
 API_SECRET = os.environ.get("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# === Настройки бота ===
+# === Настройки ===
 ALLOWED_SYMBOLS = [
     'XRPUSDT', 'DOGEUSDT', 'TRXUSDT', 'LINAUSDT', 'BLZUSDT', '1000BONKUSDT'
 ]
@@ -32,8 +32,7 @@ CHECK_INTERVAL = 60  # seconds
 
 # === Binance и Telegram ===
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = Client(API_KEY, API_SECRET)
-client.API_URL = 'https://fapi.binance.com/fapi'  # 🔥 Правильный URL для REAL Futures
+client = Client(API_KEY, API_SECRET)  # ✅ БЕЗ лишних URL!
 active_positions = {}
 symbol_info = {}
 
