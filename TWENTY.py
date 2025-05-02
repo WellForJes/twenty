@@ -49,12 +49,12 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 try:
     client = Client(API_KEY, API_SECRET)
-    client.ping()  # Проверка соединения
+    client.ping()
     client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 except Exception as e:
     error_text = f"❌ Ошибка при подключении к Binance API: {e}"
     print(error_text, flush=True)
-    send_message(error_text)
+    bot.send_message(TELEGRAM_CHAT_ID, error_text)
     raise SystemExit(error_text)
 
 active_positions = {}
@@ -178,26 +178,17 @@ def check_closed_positions():
             print(traceback.format_exc(), flush=True)
 
 def initial_analysis_report():
-    message = "🤖 Бот запущен!
-
-📊 Анализ монет:
-"
-
-📊 Анализ монет:
-"
+    message = "🤖 Бот запущен!\n\n📊 Анализ монет:\n"
     for symbol in ALLOWED_SYMBOLS:
         try:
             df = get_klines(symbol, interval='1h', limit=50)
             flat = is_flat(df)
             if flat:
-                message += f"{symbol} — боковик ✅
-""
+                message += f"{symbol} — боковик ✅\n"
             else:
-                message += f"{symbol} — тренд ❌
-""
+                message += f"{symbol} — тренд ❌\n"
         except Exception as e:
-            message += f"{symbol} — ошибка ⚠️ ({e})
-""
+            message += f"{symbol} — ошибка ⚠️ ({e})\n"
     send_message(message)
 
 load_symbol_info()
@@ -228,13 +219,8 @@ while True:
                 if place_order(symbol, direction, qty, sl, tp):
                     active_positions[symbol] = True
                     send_message(
-                        f"📈 Сделка ОТКРЫТА ({direction.upper()}) {symbol}
-"
-                        f"Entry: {price}
-TP: {tp}
-SL: {sl}
-Qty: {qty} @ x{LEVERAGE}
-"
+                        f"📈 Сделка ОТКРЫТА ({direction.upper()}) {symbol}\n"
+                        f"Entry: {price}\nTP: {tp}\nSL: {sl}\nQty: {qty} @ x{LEVERAGE}\n"
                         f"Время: {datetime.utcnow().strftime('%H:%M:%S')} UTC"
                     )
         except Exception as e:
@@ -246,20 +232,16 @@ Qty: {qty} @ x{LEVERAGE}
     now = datetime.utcnow()
     if now.minute % 15 == 0:
         try:
-            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC
-
-"
+            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC\n\n"
             for symbol in ALLOWED_SYMBOLS:
                 try:
                     df = get_klines(symbol, interval='1h', limit=50)
                     price = get_price(symbol)
                     flat = is_flat(df)
                     state = "боковик ✅" if flat else "тренд ❌"
-                    message += f"{symbol} — {price} — {state}
-"
+                    message += f"{symbol} — {price} — {state}\n"
                 except Exception as inner:
-                    message += f"{symbol} — ошибка ⚠️ ({inner})
-"
+                    message += f"{symbol} — ошибка ⚠️ ({inner})\n"
             send_message(message)
         except Exception as e:
             send_message(f"⚠️ Не удалось сформировать 15-минутный отчёт: {e}")
