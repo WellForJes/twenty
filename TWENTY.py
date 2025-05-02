@@ -1,4 +1,4 @@
-    import time
+import time
 import os
 import requests
 import telebot
@@ -29,15 +29,13 @@ CHECK_INTERVAL = 60
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = Client(API_KEY, API_SECRET)
-client.FUTURES_URL = 'https://fapi.binance.com/fapi'  # Установка стабильного URL как в боевом боте
+client.FUTURES_URL = 'https://fapi.binance.com/fapi'
 active_positions = {}
 symbol_info = {}
 last_reconnect_time = 0
 
-
 def send_message(text):
     bot.send_message(TELEGRAM_CHAT_ID, text)
-
 
 def load_symbol_info():
     exchange_info = client.futures_exchange_info()
@@ -51,10 +49,8 @@ def load_symbol_info():
                 tick_size = float(f['tickSize'])
         symbol_info[symbol] = {'stepSize': step_size, 'tickSize': tick_size}
 
-
 def round_step(value, step):
     return math.floor(value / step) * step
-
 
 def get_klines(symbol, interval='1h', limit=50):
     data = client.futures_klines(symbol=symbol, interval=interval, limit=limit)
@@ -66,7 +62,6 @@ def get_klines(symbol, interval='1h', limit=50):
     df['open'] = df['open'].astype(float)
     return df
 
-
 def is_flat(df):
     df['ADX'] = adx(df['high'], df['low'], df['close'], window=14)
     df['RSI'] = RSIIndicator(df['close'], window=14).rsi()
@@ -76,18 +71,15 @@ def is_flat(df):
     rsi_val = df['RSI'].dropna().iloc[-1]
     return adx_val < 20 and 40 < rsi_val < 60
 
-
 def detect_range(df):
     recent = df[-20:]
     support = recent['low'].min()
     resistance = recent['high'].max()
     return support, resistance
 
-
 def get_price(symbol):
     ticker = client.futures_ticker(symbol=symbol)
     return float(ticker['lastPrice'])
-
 
 def calculate_tp_sl(entry, direction, support, resistance, symbol):
     if direction == 'long':
@@ -99,14 +91,12 @@ def calculate_tp_sl(entry, direction, support, resistance, symbol):
     tick = symbol_info[symbol]['tickSize']
     return round_step(tp, tick), round_step(sl, tick)
 
-
 def get_position_size(entry, sl, symbol):
     loss_per_unit = abs(entry - sl)
     total_loss = RISK_PER_TRADE
     raw_qty = total_loss / loss_per_unit
     step = symbol_info[symbol]['stepSize']
     return round_step(raw_qty, step)
-
 
 def place_order(symbol, side, qty, sl, tp):
     try:
@@ -116,7 +106,6 @@ def place_order(symbol, side, qty, sl, tp):
             type=ORDER_TYPE_MARKET,
             quantity=qty
         )
-
         client.futures_create_order(
             symbol=symbol,
             side=SIDE_SELL if side == 'long' else SIDE_BUY,
@@ -126,7 +115,6 @@ def place_order(symbol, side, qty, sl, tp):
             timeInForce='GTC',
             reduceOnly=True
         )
-
         client.futures_create_order(
             symbol=symbol,
             side=SIDE_SELL if side == 'long' else SIDE_BUY,
@@ -136,12 +124,10 @@ def place_order(symbol, side, qty, sl, tp):
             reduceOnly=True,
             quantity=qty
         )
-
         return True
     except Exception as e:
         send_message(f"❌ Ошибка при создании ордера: {e}")
         return False
-
 
 def check_closed_positions():
     global active_positions, last_reconnect_time
@@ -161,3 +147,74 @@ def check_closed_positions():
                 send_message(f"♻️ Переподключение к Binance API из-за сбоя в {datetime.utcnow().strftime('%H:%M:%S')} UTC")
         else:
             send_message(f"⚠️ Ошибка при проверке позиций: {e}")
+
+
+def initial_analysis_report():
+    message = "🤖 Бот запущен!\n\n📊 Анализ монет:\n"
+    for symbol in ALLOWED_SYMBOLS:
+        try:
+            df = get_klines(symbol, interval='1h', limit=50)
+            flat = is_flat(df)
+            if flat:
+                message += f"{symbol} — боковик ✅\n"
+            else:
+                message += f"{symbol} — тренд ❌\n"
+        except Exception as e:
+            message += f"{symbol} — ошибка ⚠️ ({e})\n"
+    send_message(message)
+
+load_symbol_info()
+initial_analysis_report()
+
+while True:
+    for symbol in ALLOWED_SYMBOLS:
+        if symbol in active_positions:
+            continue
+
+        try:
+            df = get_klines(symbol, interval='1h', limit=50)
+            if not is_flat(df):
+                continue
+
+            support, resistance = detect_range(df)
+            price = get_price(symbol)
+            direction = None
+
+            if price <= support * 1.01:
+                direction = 'long'
+            elif price >= resistance * 0.99:
+                direction = 'short'
+
+            if direction:
+                tp, sl = calculate_tp_sl(price, direction, support, resistance, symbol)
+                qty = get_position_size(price, sl, symbol)
+                if place_order(symbol, direction, qty, sl, tp):
+                    active_positions[symbol] = True
+                    send_message(
+                        f"📈 Сделка ОТКРЫТА ({direction.upper()}) {symbol}\n"
+                        f"Entry: {price}\nTP: {tp}\nSL: {sl}\nQty: {qty} @ x{LEVERAGE}\n"
+                        f"Время: {datetime.utcnow().strftime('%H:%M:%S')} UTC"
+                    )
+        except Exception as e:
+            send_message(f"⚠️ Ошибка при обработке {symbol}: {e}")
+
+    check_closed_positions()
+
+    now = datetime.utcnow()
+    if now.minute % 15 == 0:
+        try:
+            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC\n\n"
+            for symbol in ALLOWED_SYMBOLS:
+                try:
+                    df = get_klines(symbol, interval='1h', limit=50)
+                    price = get_price(symbol)
+                    flat = is_flat(df)
+                    state = "боковик ✅" if flat else "тренд ❌"
+                    message += f"{symbol} — {price} — {state}\n"
+                except Exception as inner:
+                    message += f"{symbol} — ошибка ⚠️ ({inner})\n"
+            send_message(message)
+        except Exception as e:
+            send_message(f"⚠️ Не удалось сформировать 15-минутный отчёт: {e}")
+
+    time.sleep(CHECK_INTERVAL)
