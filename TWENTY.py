@@ -1,24 +1,38 @@
 import time
+import os
 import requests
 import telebot
 import math
 from datetime import datetime
 from binance.client import Client
 from binance.enums import *
-from ta.volatility import average_true_range
 from ta.trend import adx
 from ta.momentum import RSIIndicator
 import pandas as pd
 import numpy as np
-import config
 
-bot = telebot.TeleBot(config.TELEGRAM_TOKEN)
-client = Client(config.API_KEY, config.API_SECRET)
+# === Получение переменных из окружения (Render) ===
+API_KEY = os.environ.get("BINANCE_API_KEY")
+API_SECRET = os.environ.get("BINANCE_API_SECRET")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+ALLOWED_SYMBOLS = [
+    'XRPUSDT', 'DOGEUSDT', 'TRXUSDT', 'LINAUSDT', 'BLZUSDT', 'PEPEUSDT', '1000BONKUSDT'
+]
+
+RISK_PER_TRADE = 3  # USD
+LEVERAGE = 10
+CHECK_INTERVAL = 60  # seconds
+
+# === Инициализация клиентов ===
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
+client = Client(API_KEY, API_SECRET)
 active_positions = {}
 symbol_info = {}
 
 def send_message(text):
-    bot.send_message(config.TELEGRAM_CHAT_ID, text)
+    bot.send_message(TELEGRAM_CHAT_ID, text)
 
 def load_symbol_info():
     exchange_info = client.futures_exchange_info()
@@ -74,20 +88,19 @@ def calculate_tp_sl(entry, direction, support, resistance, symbol):
 
 def get_position_size(entry, sl, symbol):
     loss_per_unit = abs(entry - sl)
-    total_loss = config.RISK_PER_TRADE
+    total_loss = RISK_PER_TRADE
     raw_qty = total_loss / loss_per_unit
     step = symbol_info[symbol]['stepSize']
     return round_step(raw_qty, step)
 
 def place_order(symbol, side, qty, sl, tp):
     try:
-        order = client.futures_create_order(
+        client.futures_create_order(
             symbol=symbol,
             side=SIDE_BUY if side == 'long' else SIDE_SELL,
             type=ORDER_TYPE_MARKET,
             quantity=qty
         )
-        pos_side = 'BUY' if side == 'long' else 'SELL'
 
         client.futures_create_order(
             symbol=symbol,
@@ -127,11 +140,26 @@ def check_closed_positions():
     except Exception as e:
         send_message(f"⚠️ Ошибка при проверке позиций: {e}")
 
-# === MAIN LOOP ===
+def initial_analysis_report():
+    message = "🤖 Бот запущен!\n\n📊 Анализ монет:\n"
+    for symbol in ALLOWED_SYMBOLS:
+        try:
+            df = get_klines(symbol, interval='1h', limit=50)
+            flat = is_flat(df)
+            if flat:
+                message += f"{symbol} — боковик ✅\n"
+            else:
+                message += f"{symbol} — тренд ❌\n"
+        except Exception as e:
+            message += f"{symbol} — ошибка ⚠️ ({e})\n"
+    send_message(message)
+
+# === СТАРТ ===
 load_symbol_info()
+initial_analysis_report()
 
 while True:
-    for symbol in config.ALLOWED_SYMBOLS:
+    for symbol in ALLOWED_SYMBOLS:
         if symbol in active_positions:
             continue
 
@@ -156,11 +184,11 @@ while True:
                     active_positions[symbol] = True
                     send_message(
                         f"📈 Сделка ОТКРЫТА ({direction.upper()}) {symbol}\n"
-                        f"Entry: {price}\nTP: {tp}\nSL: {sl}\nQty: {qty} @ x10\n"
+                        f"Entry: {price}\nTP: {tp}\nSL: {sl}\nQty: {qty} @ x{LEVERAGE}\n"
                         f"Время: {datetime.utcnow().strftime('%H:%M:%S')} UTC"
                     )
         except Exception as e:
             send_message(f"⚠️ Ошибка при обработке {symbol}: {e}")
 
     check_closed_positions()
-    time.sleep(config.CHECK_INTERVAL)
+    time.sleep(CHECK_INTERVAL)
