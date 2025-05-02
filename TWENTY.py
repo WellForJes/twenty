@@ -19,6 +19,23 @@ API_SECRET = os.environ.get("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# Проверка переменных окружения
+missing_vars = []
+if not API_KEY: missing_vars.append("BINANCE_API_KEY")
+if not API_SECRET: missing_vars.append("BINANCE_API_SECRET")
+if not TELEGRAM_TOKEN: missing_vars.append("TELEGRAM_TOKEN")
+if not TELEGRAM_CHAT_ID: missing_vars.append("TELEGRAM_CHAT_ID")
+
+if missing_vars:
+    error_text = f"❌ Не заданы переменные окружения: {', '.join(missing_vars)}"
+    print(error_text)
+    try:
+        temp_bot = telebot.TeleBot(TELEGRAM_TOKEN or "")
+        temp_bot.send_message(TELEGRAM_CHAT_ID or "", error_text)
+    except:
+        pass
+    raise SystemExit(error_text)
+
 ALLOWED_SYMBOLS = [
     'XRPUSDT', 'DOGEUSDT', 'TRXUSDT', 'LINAUSDT', 'BLZUSDT', '1000BONKUSDT'
 ]
@@ -148,9 +165,11 @@ def check_closed_positions():
         else:
             send_message(f"⚠️ Ошибка при проверке позиций: {e}")
 
-
 def initial_analysis_report():
-    message = "🤖 Бот запущен!\n\n📊 Анализ монет:\n"
+    message = "🤖 Бот запущен!
+
+📊 Анализ монет:
+"
     for symbol in ALLOWED_SYMBOLS:
         try:
             df = get_klines(symbol, interval='1h', limit=50)
@@ -203,7 +222,8 @@ while True:
     now = datetime.utcnow()
     if now.minute % 15 == 0:
         try:
-            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC\n\n"
+            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC\n
+"
             for symbol in ALLOWED_SYMBOLS:
                 try:
                     df = get_klines(symbol, interval='1h', limit=50)
