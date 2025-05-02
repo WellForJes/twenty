@@ -166,10 +166,7 @@ def check_closed_positions():
             send_message(f"⚠️ Ошибка при проверке позиций: {e}")
 
 def initial_analysis_report():
-    message = "🤖 Бот запущен!
-
-📊 Анализ монет:
-"
+    message = "🤖 Бот запущен!\n\n📊 Анализ монет:\n"
     for symbol in ALLOWED_SYMBOLS:
         try:
             df = get_klines(symbol, interval='1h', limit=50)
@@ -222,8 +219,7 @@ while True:
     now = datetime.utcnow()
     if now.minute % 15 == 0:
         try:
-            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC\n
-"
+            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC\n\n"
             for symbol in ALLOWED_SYMBOLS:
                 try:
                     df = get_klines(symbol, interval='1h', limit=50)
