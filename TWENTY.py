@@ -158,6 +158,10 @@ def check_closed_positions():
             if now - last_reconnect_time > 300:
                 last_reconnect_time = now
                 send_message(f"♻️ Переподключение к Binance API из-за сбоя в {datetime.utcnow().strftime('%H:%M:%S')} UTC")
+                error_details = traceback.format_exc()
+                print("♻️ Binance API вернул HTML или некорректный ответ:")
+                print(error_details, flush=True)
+                send_message(f"🔍 Подробности: {error_details.splitlines()[-1]}").strftime('%H:%M:%S')} UTC")
         else:
             send_message(f"⚠️ Ошибка при проверке позиций: {e}")
             print(traceback.format_exc(), flush=True)
