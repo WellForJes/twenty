@@ -35,7 +35,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 try:
     client = Client(API_KEY, API_SECRET)
     client.ping()
-    client.FUTURES_URL = 'https://fapi.binance.com/fapi'
+    # client.FUTURES_URL = 'https://fapi.binance.com/fapi'  # Удалено как неверный адрес
 except Exception as e:
     error_text = f"❌ Ошибка при подключении к Binance API: {e}"
     print(error_text, flush=True)
@@ -161,7 +161,7 @@ def check_closed_positions():
                 error_details = traceback.format_exc()
                 print("♻️ Binance API вернул HTML или некорректный ответ:")
                 print(error_details, flush=True)
-                send_message(f"🔍 Подробности: {error_details.splitlines()[-1]}")
+                send_message(f"🔍 Binance ответ: {e}")
         else:
             send_message(f"⚠️ Ошибка при проверке позиций: {e}")
             print(traceback.format_exc(), flush=True)
