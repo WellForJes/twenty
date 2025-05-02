@@ -4,6 +4,7 @@ import requests
 import telebot
 import math
 import warnings
+import traceback
 from datetime import datetime
 from binance.client import Client
 from binance.enums import *
@@ -144,6 +145,7 @@ def place_order(symbol, side, qty, sl, tp):
         return True
     except Exception as e:
         send_message(f"❌ Ошибка при создании ордера: {e}")
+        print(traceback.format_exc())
         return False
 
 def check_closed_positions():
@@ -164,6 +166,7 @@ def check_closed_positions():
                 send_message(f"♻️ Переподключение к Binance API из-за сбоя в {datetime.utcnow().strftime('%H:%M:%S')} UTC")
         else:
             send_message(f"⚠️ Ошибка при проверке позиций: {e}")
+            print(traceback.format_exc())
 
 def initial_analysis_report():
     message = "🤖 Бот запущен!\n\n📊 Анализ монет:\n"
@@ -213,6 +216,7 @@ while True:
                     )
         except Exception as e:
             send_message(f"⚠️ Ошибка при обработке {symbol}: {e}")
+            print(traceback.format_exc())
 
     check_closed_positions()
 
@@ -232,5 +236,6 @@ while True:
             send_message(message)
         except Exception as e:
             send_message(f"⚠️ Не удалось сформировать 15-минутный отчёт: {e}")
+            print(traceback.format_exc())
 
     time.sleep(CHECK_INTERVAL)
