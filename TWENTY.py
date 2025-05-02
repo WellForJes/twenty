@@ -12,32 +12,30 @@ from ta.momentum import RSIIndicator
 import pandas as pd
 import numpy as np
 
-# === Отключаем предупреждения от ta-lib ===
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# === Переменные окружения ===
 API_KEY = os.environ.get("BINANCE_API_KEY")
 API_SECRET = os.environ.get("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# === Настройки ===
 ALLOWED_SYMBOLS = [
     'XRPUSDT', 'DOGEUSDT', 'TRXUSDT', 'LINAUSDT', 'BLZUSDT', '1000BONKUSDT'
 ]
 
-RISK_PER_TRADE = 3  # USD
+RISK_PER_TRADE = 3
 LEVERAGE = 10
-CHECK_INTERVAL = 60  # seconds
+CHECK_INTERVAL = 60
 
-# === Binance и Telegram ===
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = Client(API_KEY, API_SECRET)  # ✅ БЕЗ лишних URL!
+client = Client(API_KEY, API_SECRET)
 active_positions = {}
 symbol_info = {}
 
+
 def send_message(text):
     bot.send_message(TELEGRAM_CHAT_ID, text)
+
 
 def load_symbol_info():
     exchange_info = client.futures_exchange_info()
@@ -51,18 +49,21 @@ def load_symbol_info():
                 tick_size = float(f['tickSize'])
         symbol_info[symbol] = {'stepSize': step_size, 'tickSize': tick_size}
 
+
 def round_step(value, step):
     return math.floor(value / step) * step
+
 
 def get_klines(symbol, interval='1h', limit=50):
     data = client.futures_klines(symbol=symbol, interval=interval, limit=limit)
     df = pd.DataFrame(data)
-    df.columns = ['time','open','high','low','close','volume','close_time','qav','num_trades','taker_base_vol','taker_quote_vol','ignore']
+    df.columns = ['time', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'qav', 'num_trades', 'taker_base_vol', 'taker_quote_vol', 'ignore']
     df['close'] = df['close'].astype(float)
     df['high'] = df['high'].astype(float)
     df['low'] = df['low'].astype(float)
     df['open'] = df['open'].astype(float)
     return df
+
 
 def is_flat(df):
     df['ADX'] = adx(df['high'], df['low'], df['close'], window=14)
@@ -73,15 +74,18 @@ def is_flat(df):
     rsi_val = df['RSI'].dropna().iloc[-1]
     return adx_val < 20 and 40 < rsi_val < 60
 
+
 def detect_range(df):
     recent = df[-20:]
     support = recent['low'].min()
     resistance = recent['high'].max()
     return support, resistance
 
+
 def get_price(symbol):
     ticker = client.futures_ticker(symbol=symbol)
     return float(ticker['lastPrice'])
+
 
 def calculate_tp_sl(entry, direction, support, resistance, symbol):
     if direction == 'long':
@@ -93,12 +97,14 @@ def calculate_tp_sl(entry, direction, support, resistance, symbol):
     tick = symbol_info[symbol]['tickSize']
     return round_step(tp, tick), round_step(sl, tick)
 
+
 def get_position_size(entry, sl, symbol):
     loss_per_unit = abs(entry - sl)
     total_loss = RISK_PER_TRADE
     raw_qty = total_loss / loss_per_unit
     step = symbol_info[symbol]['stepSize']
     return round_step(raw_qty, step)
+
 
 def place_order(symbol, side, qty, sl, tp):
     try:
@@ -134,8 +140,9 @@ def place_order(symbol, side, qty, sl, tp):
         send_message(f"❌ Ошибка при создании ордера: {e}")
         return False
 
+
 def check_closed_positions():
-    global active_positions
+    global active_positions, client
     try:
         positions = client.futures_position_information()
         for pos in positions:
@@ -145,7 +152,12 @@ def check_closed_positions():
                 active_positions.pop(symbol, None)
                 send_message(f"✅ Позиция по {symbol} ЗАКРЫТА")
     except Exception as e:
-        send_message(f"⚠️ Ошибка при проверке позиций: {e}")
+        if "Invalid JSON" in str(e) or "html" in str(e).lower():
+            client = Client(API_KEY, API_SECRET)
+            send_message("♻️ Переподключение к Binance API из-за сбоя.")
+        else:
+            send_message(f"⚠️ Ошибка при проверке позиций: {e}")
+
 
 def initial_analysis_report():
     message = "🤖 Бот запущен!\n\n📊 Анализ монет:\n"
@@ -161,7 +173,7 @@ def initial_analysis_report():
             message += f"{symbol} — ошибка ⚠️ ({e})\n"
     send_message(message)
 
-# === СТАРТ ===
+
 load_symbol_info()
 initial_analysis_report()
 
@@ -198,4 +210,22 @@ while True:
             send_message(f"⚠️ Ошибка при обработке {symbol}: {e}")
 
     check_closed_positions()
+
+    now = datetime.utcnow()
+    if now.minute % 15 == 0:
+        try:
+            message = f"🕒 Отчёт 15м: {now.strftime('%H:%M')} UTC\n\n"
+            for symbol in ALLOWED_SYMBOLS:
+                try:
+                    df = get_klines(symbol, interval='1h', limit=50)
+                    price = get_price(symbol)
+                    flat = is_flat(df)
+                    state = "боковик ✅" if flat else "тренд ❌"
+                    message += f"{symbol} — {price} — {state}\n"
+                except Exception as inner:
+                    message += f"{symbol} — ошибка ⚠️ ({inner})\n"
+            send_message(message)
+        except Exception as e:
+            send_message(f"⚠️ Не удалось сформировать 15-минутный отчёт: {e}")
+
     time.sleep(CHECK_INTERVAL)
