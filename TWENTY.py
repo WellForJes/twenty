@@ -15,27 +15,12 @@ import numpy as np
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-API_KEY = os.environ.get("BINANCE_API_KEY")
-API_SECRET = os.environ.get("BINANCE_API_SECRET")
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+API_KEY = "RyBmhW46P2FrvDffq9V7xTZudskS3aBfWKU8ZnrtNjwkBA5DSzcpXDB41xITuywM"
+API_SECRET = "J5VezQjvaM0wDYHpvbnesPMi7g6uy9HMlxiMq2DpAXlPkOxPXo8Nlzc8mGLsDODo"
+TELEGRAM_TOKEN = "7915214060:AAEOeRNRHpQClOc1_8K3GOHkQVBKv7RgVL0"
+TELEGRAM_CHAT_ID = "349999939"
 
-# Проверка переменных окружения
-missing_vars = []
-if not API_KEY: missing_vars.append("BINANCE_API_KEY")
-if not API_SECRET: missing_vars.append("BINANCE_API_SECRET")
-if not TELEGRAM_TOKEN: missing_vars.append("TELEGRAM_TOKEN")
-if not TELEGRAM_CHAT_ID: missing_vars.append("TELEGRAM_CHAT_ID")
-
-if missing_vars:
-    error_text = f"❌ Не заданы переменные окружения: {', '.join(missing_vars)}"
-    print(error_text, flush=True)
-    try:
-        temp_bot = telebot.TeleBot(TELEGRAM_TOKEN or "")
-        temp_bot.send_message(TELEGRAM_CHAT_ID or "", error_text)
-    except:
-        pass
-    raise SystemExit(error_text)
+# Проверка переменных окружения отключена, так как ключи указаны вручную
 
 ALLOWED_SYMBOLS = [
     'XRPUSDT', 'DOGEUSDT', 'TRXUSDT', 'LINAUSDT', 'BLZUSDT', '1000BONKUSDT'
