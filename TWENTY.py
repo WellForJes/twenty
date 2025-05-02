@@ -15,7 +15,7 @@ import numpy as np
 # === Отключаем предупреждения от ta-lib ===
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# === Переменные окружения для Render ===
+# === Переменные окружения (Render) ===
 API_KEY = os.environ.get("BINANCE_API_KEY")
 API_SECRET = os.environ.get("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -30,10 +30,10 @@ RISK_PER_TRADE = 3  # USD
 LEVERAGE = 10
 CHECK_INTERVAL = 60  # seconds
 
-# === Binance и Telegram и инициализация ===
+# === Binance и Telegram ===
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = Client(API_KEY, API_SECRET)
-client.FUTURES_API_URL = 'https://fapi.binance.com'
+client.API_URL = 'https://fapi.binance.com/fapi'  # 🔥 Правильный URL для REAL Futures
 active_positions = {}
 symbol_info = {}
 
