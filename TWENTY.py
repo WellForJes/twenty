@@ -3,6 +3,7 @@ import os
 import requests
 import telebot
 import math
+import warnings
 from datetime import datetime
 from binance.client import Client
 from binance.enums import *
@@ -11,23 +12,28 @@ from ta.momentum import RSIIndicator
 import pandas as pd
 import numpy as np
 
-# === Получение переменных из окружения (Render) ===
+# === Отключаем предупреждения от ta-lib ===
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+# === Переменные окружения для Render ===
 API_KEY = os.environ.get("BINANCE_API_KEY")
 API_SECRET = os.environ.get("BINANCE_API_SECRET")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# === Настройки бота ===
 ALLOWED_SYMBOLS = [
-    'XRPUSDT', 'DOGEUSDT', 'TRXUSDT', 'LINAUSDT', 'BLZUSDT', 'PEPEUSDT', '1000BONKUSDT'
+    'XRPUSDT', 'DOGEUSDT', 'TRXUSDT', 'LINAUSDT', 'BLZUSDT', '1000BONKUSDT'
 ]
 
 RISK_PER_TRADE = 3  # USD
 LEVERAGE = 10
 CHECK_INTERVAL = 60  # seconds
 
-# === Инициализация клиентов ===
+# === Binance и Telegram и инициализация ===
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = Client(API_KEY, API_SECRET)
+client.FUTURES_API_URL = 'https://fapi.binance.com'
 active_positions = {}
 symbol_info = {}
 
@@ -62,8 +68,10 @@ def get_klines(symbol, interval='1h', limit=50):
 def is_flat(df):
     df['ADX'] = adx(df['high'], df['low'], df['close'], window=14)
     df['RSI'] = RSIIndicator(df['close'], window=14).rsi()
-    adx_val = df['ADX'].iloc[-1]
-    rsi_val = df['RSI'].iloc[-1]
+    if df['ADX'].isna().any() or df['RSI'].isna().any():
+        return False
+    adx_val = df['ADX'].dropna().iloc[-1]
+    rsi_val = df['RSI'].dropna().iloc[-1]
     return adx_val < 20 and 40 < rsi_val < 60
 
 def detect_range(df):
