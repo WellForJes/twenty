@@ -182,19 +182,22 @@ def initial_analysis_report():
 
 📊 Анализ монет:
 "
+
+📊 Анализ монет:
+"
     for symbol in ALLOWED_SYMBOLS:
         try:
             df = get_klines(symbol, interval='1h', limit=50)
             flat = is_flat(df)
             if flat:
                 message += f"{symbol} — боковик ✅
-"
+""
             else:
                 message += f"{symbol} — тренд ❌
-"
+""
         except Exception as e:
             message += f"{symbol} — ошибка ⚠️ ({e})
-"
+""
     send_message(message)
 
 load_symbol_info()
